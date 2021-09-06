@@ -1,0 +1,6 @@
+.env
+.venv/
+.vscode/
+**/__pycache__/
+!**/.gitkeep
+sqlite2.db
