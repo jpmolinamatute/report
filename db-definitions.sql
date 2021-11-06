@@ -1,12 +1,12 @@
 PRAGMA foreign_keys = ON;
 
-DROP VIEW IF EXISTS inventory;
 DROP TABLE IF EXISTS operation_details;
-DROP TABLE IF EXISTS operation;
-DROP TABLE IF EXISTS ref_prices;
+DROP TABLE IF EXISTS interest;
+DROP TABLE IF EXISTS operation_fees;
+DROP TABLE IF EXISTS operations;
 DROP TABLE IF EXISTS coins;
-DROP TABLE IF EXISTS operation_type;
 DROP TABLE IF EXISTS wallets;
+DROP TABLE IF EXISTS operation_type;
 
 CREATE TABLE operation_type(
     name TEXT NOT NULL PRIMARY KEY
@@ -20,81 +20,79 @@ CREATE TABLE coins(
     name TEXT NOT NULL PRIMARY KEY
 );
 
-CREATE TABLE ref_prices(
-    coin TEXT NOT NULL PRIMARY KEY,
-    price REAL NOT NULL DEFAULT 0.00,
-    FOREIGN KEY(coin) REFERENCES coins(name)
+CREATE TABLE operations(
+    id TEXT NOT NULL PRIMARY KEY,
+    utc_date TEXT NOT NULL,
+    op_type TEXT NOT NULL,
+    FOREIGN KEY(op_type) REFERENCES operation_type(name)
 );
 
 CREATE TABLE operation_details(
     id TEXT NOT NULL PRIMARY KEY,
     op_id TEXT NOT NULL,
     coin TEXT NOT NULL,
-    change REAL NOT NULL,
-    wallet TEXT NOT NULL DEFAULT binance,
-    FOREIGN KEY(op_id) REFERENCES operation(id)
-    FOREIGN KEY(coin) REFERENCES coins(name)
+    amount REAL NOT NULL,
+    investment REAL DEFAULT 0.0,
+    wallet TEXT NOT NULL DEFAULT BINANCE,
+    FOREIGN KEY(op_id) REFERENCES operations(id),
+    FOREIGN KEY(coin) REFERENCES coins(name),
+    FOREIGN KEY(wallet) REFERENCES wallets(name)
 );
 
-CREATE TABLE operation(
+CREATE TABLE operation_fees(
     id TEXT NOT NULL PRIMARY KEY,
-    utc_date TEXT NOT NULL,
-    name TEXT NOT NULL,
-    FOREIGN KEY(name) REFERENCES operation_type(name)
+    op_id TEXT NOT NULL,
+    coin TEXT NOT NULL,
+    amount REAL NOT NULL,
+    wallet TEXT NOT NULL DEFAULT BINANCE,
+    FOREIGN KEY(op_id) REFERENCES operations(id),
+    FOREIGN KEY(coin) REFERENCES coins(name),
+    FOREIGN KEY(wallet) REFERENCES wallets(name)
 );
 
-CREATE VIEW inventory AS
-SELECT coin, ROUND(SUM(change),8) AS change
-FROM operation_details
-GROUP BY coin
-HAVING ROUND(SUM(change),8) > 0
-ORDER BY coin;
+CREATE TABLE interest(
+    id TEXT NOT NULL PRIMARY KEY,
+    op_id TEXT NOT NULL,
+    coin TEXT NOT NULL,
+    amount REAL NOT NULL,
+    wallet TEXT NOT NULL DEFAULT BINANCE,
+    FOREIGN KEY(op_id) REFERENCES operations(id),
+    FOREIGN KEY(coin) REFERENCES coins(name),
+    FOREIGN KEY(wallet) REFERENCES wallets(name)
+);
 
 INSERT INTO operation_type(name)
 VALUES
-("BUY"),
-("SELL"),
-("FEE"),
-("DEPOSIT"),
-("WITHDRAW"),
 ("ADJUSTMENT"),
-("CONVERTION"),
-("INTEREST");
+("DEPOSIT"),
+("FEE"),
+("INTEREST"),
+("SWAP"),
+("TRANSFER"),
+("WITHDRAW");
 
 INSERT INTO coins(name)
 VALUES
-("BTC"),
-("ETH"),
-("BNB"),
-("AXS"),
-("XMR"),
 ("ADA"),
-("XRP"),
+("ATOM"),
+("AXS"),
+("BNB"),
+("BTC"),
+("BUSD"),
+("DOGE"),
 ("DOT"),
+("ETH"),
+("LTC"),
+("LUNA"),
+("SLP"),
 ("SOL"),
 ("UNI"),
 ("USDT"),
-("BUSD"),
-("LTC"),
-("DOGE"),
-("SLP");
-
-INSERT INTO ref_prices (coin, price)
-VALUES
-("BTC", 49865.86),
-("ETH", 3879.57),
-("BNB", 495.8),
-("AXS", 88.7),
-("XMR", 304.0),
-("ADA", 2.860),
-("XRP", 1.2554),
-("DOT", 33.02),
-("SOL", 140.19),
-("UNI", 28.69),
-("SLP", 0.1249);
+("XMR"),
+("XRP");
 
 INSERT INTO wallets(name)
 VALUES
-("binance"),
-("daedalus"),
-("metamask");
+("BINANCE"),
+("TREZOR"),
+("PHANTOM");

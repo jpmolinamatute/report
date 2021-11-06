@@ -7,9 +7,14 @@ import re
 import uuid
 import sqlite3
 from os import path
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, Union, Literal
 from datetime import datetime
 from tools import Op_Id
+
+
+OPERATION_TYPE = Literal["ADJUSTMENT", "DEPOSIT", "FEE", "INTEREST", "SWAP", "TRANSFER", "WITHDRAW"]
+DETAIL_TYPE = Literal["details", "fees", "interest", "operations"]
+MISSING_FIAT_INVOLVED = tuple[str, str, str, float]
 
 
 class Coin(TypedDict):
@@ -17,18 +22,25 @@ class Coin(TypedDict):
     coin: str
 
 
-class Coin_Record(TypedDict, total=False):
+class Operation_Details(TypedDict, total=False):
     id: str
     op_id: str
     coin: str
-    change: float
+    amount: float
+    investment: Optional[float]
     wallet: Optional[str]
 
 
-class Operation(TypedDict):
+class Operations(TypedDict):
     id: str
     utc_date: str
-    name: str
+    op_type: OPERATION_TYPE
+
+
+class Data_Extracted(TypedDict, total=False):
+    detail_list: list[Operation_Details]
+    operation_list: list[Operations]
+    fee_list: Optional[list[Operation_Details]]
 
 
 class Data_Loaded(TypedDict):
@@ -36,10 +48,7 @@ class Data_Loaded(TypedDict):
     file_type: int
 
 
-class Data_Extracted(TypedDict):
-    coin_list: list[Coin_Record]
-    payment_list: list[Operation]
-
+ALL_OPERATIONS = Union[list[Operation_Details], list[Operations]]
 
 # sqlite3.Cursor
 def startdb() -> sqlite3.Connection:
@@ -66,24 +75,29 @@ def split_raw_amount_coin(amount_coin: str) -> Coin:
     return result
 
 
-def write_report_data(conn: sqlite3.Connection, records: list[Coin_Record]) -> None:
-    sql_str = """
-        INSERT INTO operation_details(id, op_id, coin, change)
-        VALUES(:id, :op_id, :coin, :change)
-    """
-    cursor = conn.cursor()
-    cursor.executemany(sql_str, records)
-    conn.commit()
-    cursor.close()
+def write_data(conn: sqlite3.Connection, records: ALL_OPERATIONS, detail_type: DETAIL_TYPE) -> None:
+    sql_str = {
+        "details": """
+            INSERT INTO operation_details(id, op_id, coin, amount, investment)
+            VALUES(:id, :op_id, :coin, :amount, :investment);
+        """,
+        "fees": """
+            INSERT INTO operation_fees(id, op_id, coin, amount)
+            VALUES(:id, :op_id, :coin, :amount);
+        """,
+        "interest": """
+            INSERT INTO interest(id, op_id, coin, amount)
+            VALUES(:id, :op_id, :coin, :amount);
+        """,
+        "operations": """
+            INSERT INTO operations(id, utc_date, op_type)
+            VALUES(:id, :utc_date, :op_type);
+        """,
+    }
 
-
-def write_operation_data(conn: sqlite3.Connection, records: list[Operation]) -> None:
-    sql_str = """
-        INSERT INTO operation(id, utc_date, name)
-        VALUES(:id, :utc_date, :name)
-    """
     cursor = conn.cursor()
-    cursor.executemany(sql_str, records)
+    logging.debug(sql_str[detail_type])
+    cursor.executemany(sql_str[detail_type], records)
     conn.commit()
     cursor.close()
 
@@ -101,9 +115,9 @@ def get_op_id(op_id_list: list[Op_Id], utc_time: float) -> str:
 
 
 def load(file_path: str) -> Data_Loaded:
-    dataloaded: Data_Loaded = {}
+    dataloaded: Data_Loaded = {}  # type: ignore[typeddict-item]
     type_1 = "Date(UTC),Pair,Side,Price,Executed,Amount,Fee".split(",")
-    type_2 = "UTC_Time,Account,Operation,Coin,Change,Remark".split(",")
+    type_2 = "UTC_Time,Account,Operation,Coin,Change,Investment".split(",")
 
     with open(file_path, mode="r", encoding="utf-8") as csv_file:
         dataloaded["csv_reader"] = [
@@ -120,12 +134,14 @@ def load(file_path: str) -> Data_Loaded:
         dataloaded["file_type"] = 2
     else:
         raise Exception("ERROR: invalid csv file")
+        logging.debug(dataloaded["csv_reader"])
     return dataloaded
 
 
 def process_data_type_1(csv_reader: list[dict[str, str]]) -> Data_Extracted:
-    coin_list: list[Coin_Record] = []
-    payment_list: list[Operation] = []
+    detail_list: list[Operation_Details] = []
+    operation_list: list[Operations] = []
+    fee_list: list[Operation_Details] = []
     for line in csv_reader:
         if (
             "Date(UTC)" in line
@@ -139,7 +155,7 @@ def process_data_type_1(csv_reader: list[dict[str, str]]) -> Data_Extracted:
             try:
                 datetime.strptime(line["Date(UTC)"], "%Y-%m-%d %H:%M:%S")
             except ValueError as err:
-                raise ValueError("Incorrect data format, should be %Y-%m-%d %H:%M:%S") from err
+                raise ValueError("Incorrect data format, should be '%Y-%m-%d %H:%M:%S'") from err
             executed = split_raw_amount_coin(line["Executed"])
             amount = split_raw_amount_coin(line["Amount"])
             fee = split_raw_amount_coin(line["Fee"])
@@ -152,44 +168,44 @@ def process_data_type_1(csv_reader: list[dict[str, str]]) -> Data_Extracted:
                 amount["amount"] *= -1
             op_id = str(uuid.uuid4())
             utc_date = line["Date(UTC)"]
-            operation = line["Side"]
-            coin_list.append(
+
+            detail_list.append(
                 {
                     "id": str(uuid.uuid4()),
                     "op_id": op_id,
                     "coin": executed["coin"],
-                    "change": executed["amount"],
+                    "amount": executed["amount"],
                 }
             )
-            coin_list.append(
+            detail_list.append(
                 {
                     "id": str(uuid.uuid4()),
                     "op_id": op_id,
                     "coin": amount["coin"],
-                    "change": amount["amount"],
+                    "amount": amount["amount"],
                 }
             )
-            coin_list.append(
+            fee_list.append(
                 {
                     "id": str(uuid.uuid4()),
                     "op_id": op_id,
                     "coin": fee["coin"],
-                    "change": fee["amount"],
+                    "amount": fee["amount"],
                 }
             )
-            payment_list.append(
+            operation_list.append(
                 {
                     "id": op_id,
                     "utc_date": utc_date,
-                    "name": operation,
+                    "op_type": "SWAP",
                 }
             )
-    return {"coin_list": coin_list, "payment_list": payment_list}
+    return {"detail_list": detail_list, "operation_list": operation_list, "fee_list": fee_list}
 
 
 def process_data_type_2(csv_reader: list[dict[str, str]]) -> Data_Extracted:
-    coin_list: list[Coin_Record] = []
-    payment_list: list[Operation] = []
+    detail_list: list[Operation_Details] = []
+    operation_list: list[Operations] = []
     op_id_list: list[Op_Id] = []
     for line in csv_reader:
         if line["Account"] == "Spot" and line["Operation"] not in [
@@ -202,58 +218,69 @@ def process_data_type_2(csv_reader: list[dict[str, str]]) -> Data_Extracted:
                 datetime.strptime(line["UTC_Time"], "%Y-%m-%d %H:%M:%S")
             except ValueError as err:
                 raise ValueError("Incorrect data format, should be %Y-%m-%d %H:%M:%S") from err
-            operation = ""
+            operation: OPERATION_TYPE
             op_id = str(uuid.uuid4())
             if line["Operation"] == "POS savings interest":
                 operation = "INTEREST"
             elif line["Operation"] in ["Withdraw", "transfer_out", "POS savings purchase"]:
                 operation = "WITHDRAW"
-            elif line["Operation"] in ["transfer_in", "Deposit", "POS savings redemption"]:
+            elif line["Operation"] in ["Deposit", "transfer_in", "POS savings redemption"]:
                 operation = "DEPOSIT"
             elif line["Operation"] in ["Small assets exchange BNB", "Large OTC trading"]:
-                operation = "CONVERTION"
+                operation = "SWAP"
                 utc_time = datetime.strptime(line["UTC_Time"], "%Y-%m-%d %H:%M:%S").timestamp()
                 op_id = get_op_id(op_id_list, utc_time)
-            elif line["Operation"] == "ADJUSTMENT":
-                operation = "ADJUSTMENT"
+            elif line["Operation"] in ["ADJUSTMENT", "TRANSFER"]:
+                operation = line["Operation"]
 
-            if not any(d["id"] == op_id for d in payment_list):
-                payment_list.append(
+            if not any(d["id"] == op_id for d in operation_list):
+                operation_list.append(
                     {
                         "id": op_id,
                         "utc_date": line["UTC_Time"],
-                        "name": operation,
+                        "op_type": operation,
                     }
                 )
-            coin_list.append(
+
+            if line["Investment"]:
+                investment = round(float(line["Investment"]), 8)
+            else:
+                investment = 0.00
+            detail_list.append(
                 {
                     "id": str(uuid.uuid4()),
                     "op_id": op_id,
                     "coin": line["Coin"],
-                    "change": round(float(line["Change"]), 8),
+                    "amount": round(float(line["Change"]), 8),
+                    "investment": investment,
                 }
             )
-    return {"coin_list": coin_list, "payment_list": payment_list}
+    return {"detail_list": detail_list, "operation_list": operation_list}
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.DEBUG)
-    logging.info(f"Script {path.basename(__file__)} has started")
+def proccess_files(conn: sqlite3.Connection) -> None:
     file_list = [
-        "/home/juanpa/Projects/reports/statements/uptodate-04-sep-2021.csv",
-        "/home/juanpa/Projects/reports/statements/2021-04-11-2021-09-03.csv",
-        "/home/juanpa/Projects/reports/statements/adjustments.csv",
+        "/home/juanpa/Projects/reports/statements/data_type_2.csv",
+        # "/home/juanpa/Projects/reports/statements/data_type_1.csv",
+        # "/home/juanpa/Projects/reports/statements/adjustments.csv",
     ]
-    conn = startdb()
     for f in file_list:
         dataloaded = load(f)
         if dataloaded["file_type"] == 1:
             records = process_data_type_1(dataloaded["csv_reader"])
         elif dataloaded["file_type"] == 2:
             records = process_data_type_2(dataloaded["csv_reader"])
-        write_operation_data(conn, records["payment_list"])
-        write_report_data(conn, records["coin_list"])
+        write_data(conn, records["operation_list"], "operations")
+        write_data(conn, records["detail_list"], "details")
+        if "fee_list" in records:
+            write_data(conn, records["fee_list"], "fees")
 
+
+def main() -> None:
+    logging.basicConfig(level=logging.DEBUG)
+    logging.info(f"Script {path.basename(__file__)} has started")
+    conn = startdb()
+    proccess_files(conn)
     conn.close()
 
 
