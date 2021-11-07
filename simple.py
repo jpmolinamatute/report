@@ -27,7 +27,7 @@ class Operation_Details(TypedDict, total=False):
     op_id: str
     coin: str
     amount: float
-    investment: Optional[float]
+    investment: float
     wallet: Optional[str]
 
 
@@ -41,6 +41,7 @@ class Data_Extracted(TypedDict, total=False):
     detail_list: list[Operation_Details]
     operation_list: list[Operations]
     fee_list: Optional[list[Operation_Details]]
+    interest_list: Optional[list[Operation_Details]]
 
 
 class Data_Loaded(TypedDict):
@@ -116,132 +117,73 @@ def get_op_id(op_id_list: list[Op_Id], utc_time: float) -> str:
 
 def load(file_path: str) -> Data_Loaded:
     dataloaded: Data_Loaded = {}  # type: ignore[typeddict-item]
-    type_1 = "Date(UTC),Pair,Side,Price,Executed,Amount,Fee".split(",")
-    type_2 = "UTC_Time,Account,Operation,Coin,Change,Investment".split(",")
-
     with open(file_path, mode="r", encoding="utf-8") as csv_file:
         dataloaded["csv_reader"] = [
             {k: v for k, v in row.items()}
             for row in csv.DictReader(csv_file, skipinitialspace=True)
         ]
 
-    with open(file_path, mode="r", encoding="utf-8") as f:
-        header = f.readline().rstrip().split(",")
-
-    if all(elem in type_1 for elem in header):
-        dataloaded["file_type"] = 1
-    elif all(elem in type_2 for elem in header):
-        dataloaded["file_type"] = 2
-    else:
-        raise Exception("ERROR: invalid csv file")
-        logging.debug(dataloaded["csv_reader"])
     return dataloaded
-
-
-def process_data_type_1(csv_reader: list[dict[str, str]]) -> Data_Extracted:
-    detail_list: list[Operation_Details] = []
-    operation_list: list[Operations] = []
-    fee_list: list[Operation_Details] = []
-    for line in csv_reader:
-        if (
-            "Date(UTC)" in line
-            and "Pair" in line
-            and "Side" in line
-            and "Price" in line
-            and "Executed" in line
-            and "Amount" in line
-            and "Fee" in line
-        ):
-            try:
-                datetime.strptime(line["Date(UTC)"], "%Y-%m-%d %H:%M:%S")
-            except ValueError as err:
-                raise ValueError("Incorrect data format, should be '%Y-%m-%d %H:%M:%S'") from err
-            executed = split_raw_amount_coin(line["Executed"])
-            amount = split_raw_amount_coin(line["Amount"])
-            fee = split_raw_amount_coin(line["Fee"])
-            if fee["amount"]:
-                fee["amount"] *= -1
-
-            if line["Side"] == "SELL":
-                executed["amount"] *= -1
-            elif line["Side"] == "BUY":
-                amount["amount"] *= -1
-            op_id = str(uuid.uuid4())
-            utc_date = line["Date(UTC)"]
-
-            detail_list.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "op_id": op_id,
-                    "coin": executed["coin"],
-                    "amount": executed["amount"],
-                }
-            )
-            detail_list.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "op_id": op_id,
-                    "coin": amount["coin"],
-                    "amount": amount["amount"],
-                }
-            )
-            fee_list.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "op_id": op_id,
-                    "coin": fee["coin"],
-                    "amount": fee["amount"],
-                }
-            )
-            operation_list.append(
-                {
-                    "id": op_id,
-                    "utc_date": utc_date,
-                    "op_type": "SWAP",
-                }
-            )
-    return {"detail_list": detail_list, "operation_list": operation_list, "fee_list": fee_list}
 
 
 def process_data_type_2(csv_reader: list[dict[str, str]]) -> Data_Extracted:
     detail_list: list[Operation_Details] = []
+    interest_list: list[Operation_Details] = []
     operation_list: list[Operations] = []
+    fee_list: list[Operation_Details] = []
     op_id_list: list[Op_Id] = []
     for line in csv_reader:
-        if line["Account"] == "Spot" and line["Operation"] not in [
-            "Sell",
+        try:
+            datetime.strptime(line["UTC_Time"], "%Y-%m-%d %H:%M:%S")
+        except ValueError as err:
+            raise ValueError("Incorrect data format, should be %Y-%m-%d %H:%M:%S") from err
+        operation: OPERATION_TYPE
+        op_id = str(uuid.uuid4())
+        if line["Operation"] == "POS savings interest":
+            operation = "INTEREST"
+        elif line["Operation"] in ["Withdraw", "transfer_out", "POS savings purchase"]:
+            operation = "WITHDRAW"
+        elif line["Operation"] in ["Deposit", "transfer_in", "POS savings redemption"]:
+            operation = "DEPOSIT"
+        elif line["Operation"] in [
+            "Small assets exchange BNB",
+            "Large OTC trading",
             "Buy",
-            "Transaction Related",
-            "Fee",
+            "Sell",
         ]:
-            try:
-                datetime.strptime(line["UTC_Time"], "%Y-%m-%d %H:%M:%S")
-            except ValueError as err:
-                raise ValueError("Incorrect data format, should be %Y-%m-%d %H:%M:%S") from err
-            operation: OPERATION_TYPE
-            op_id = str(uuid.uuid4())
-            if line["Operation"] == "POS savings interest":
-                operation = "INTEREST"
-            elif line["Operation"] in ["Withdraw", "transfer_out", "POS savings purchase"]:
-                operation = "WITHDRAW"
-            elif line["Operation"] in ["Deposit", "transfer_in", "POS savings redemption"]:
-                operation = "DEPOSIT"
-            elif line["Operation"] in ["Small assets exchange BNB", "Large OTC trading"]:
-                operation = "SWAP"
-                utc_time = datetime.strptime(line["UTC_Time"], "%Y-%m-%d %H:%M:%S").timestamp()
-                op_id = get_op_id(op_id_list, utc_time)
-            elif line["Operation"] in ["ADJUSTMENT", "TRANSFER"]:
-                operation = line["Operation"]
+            operation = "SWAP"
+            utc_time = datetime.strptime(line["UTC_Time"], "%Y-%m-%d %H:%M:%S").timestamp()
+            op_id = get_op_id(op_id_list, utc_time)
+        elif line["Operation"] in ["ADJUSTMENT", "TRANSFER", "INTEREST", "FEE"]:
+            operation = line["Operation"]  # type: ignore[assignment]
 
-            if not any(d["id"] == op_id for d in operation_list):
-                operation_list.append(
-                    {
-                        "id": op_id,
-                        "utc_date": line["UTC_Time"],
-                        "op_type": operation,
-                    }
-                )
-
+        if not any(d["id"] == op_id for d in operation_list):
+            operation_list.append(
+                {
+                    "id": op_id,
+                    "utc_date": line["UTC_Time"],
+                    "op_type": operation,
+                }
+            )
+        if operation == "INTEREST":
+            interest_list.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "op_id": op_id,
+                    "coin": line["Coin"],
+                    "amount": round(float(line["Change"]), 8),
+                }
+            )
+        elif operation == "FEE":
+            fee_list.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "op_id": op_id,
+                    "coin": line["Coin"],
+                    "amount": round(float(line["Change"]), 8),
+                }
+            )
+        else:
             if line["Investment"]:
                 investment = round(float(line["Investment"]), 8)
             else:
@@ -255,25 +197,29 @@ def process_data_type_2(csv_reader: list[dict[str, str]]) -> Data_Extracted:
                     "investment": investment,
                 }
             )
-    return {"detail_list": detail_list, "operation_list": operation_list}
+    return {
+        "detail_list": detail_list,
+        "operation_list": operation_list,
+        "interest_list": interest_list,
+        "fee_list": fee_list,
+    }
 
 
 def proccess_files(conn: sqlite3.Connection) -> None:
     file_list = [
-        "/home/juanpa/Projects/reports/statements/data_type_2.csv",
+        "/home/juanpa/Projects/reports/statements/best-binance.csv",
         # "/home/juanpa/Projects/reports/statements/data_type_1.csv",
         # "/home/juanpa/Projects/reports/statements/adjustments.csv",
     ]
     for f in file_list:
         dataloaded = load(f)
-        if dataloaded["file_type"] == 1:
-            records = process_data_type_1(dataloaded["csv_reader"])
-        elif dataloaded["file_type"] == 2:
-            records = process_data_type_2(dataloaded["csv_reader"])
+        records = process_data_type_2(dataloaded["csv_reader"])
         write_data(conn, records["operation_list"], "operations")
         write_data(conn, records["detail_list"], "details")
         if "fee_list" in records:
-            write_data(conn, records["fee_list"], "fees")
+            write_data(conn, records["fee_list"], "fees")  # type: ignore[arg-type]
+        if "interest_list" in records:
+            write_data(conn, records["interest_list"], "interest")  # type: ignore[arg-type]
 
 
 def main() -> None:
