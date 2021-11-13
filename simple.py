@@ -3,11 +3,10 @@
 import sys
 import logging
 import csv
-import re
 import uuid
 import sqlite3
 from os import path
-from typing import TypedDict, Optional, Literal
+from typing import TypedDict, Literal
 from datetime import datetime
 
 
@@ -23,16 +22,10 @@ ACTION_TYPE = Literal[
     "FEE",
     "INTEREST",
     "SWAP",
-    "TRANSFER_IN",
-    "TRANSFER_OUT",
-    "LOSSES",
-    "GAINS",
+    "TRANSFER",
+    "LOSS",
+    "GAIN",
 ]
-
-
-class Coin(TypedDict):
-    amount: float
-    coin: str
 
 
 class Ations(TypedDict):
@@ -46,7 +39,6 @@ class Ations(TypedDict):
     wallet: str
 
 
-# sqlite3.Cursor
 def startdb() -> sqlite3.Connection:
     conn = sqlite3.connect(
         "./sqlite2.db", detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
@@ -58,19 +50,6 @@ def startdb() -> sqlite3.Connection:
     return conn
 
 
-def split_raw_amount_coin(amount_coin: str) -> Coin:
-    match = re.search(r"[A-Z]+$", amount_coin)
-    result: Optional[Coin] = None
-    if match:
-        result = {
-            "coin": match.group(),
-            "amount": round(float(re.sub(r"[A-Z,]+", "", amount_coin)), 8),
-        }
-    else:
-        raise Exception(f"Error: invalid input '{amount_coin}'")
-    return result
-
-
 def write_data(conn: sqlite3.Connection, records: list[Ations]) -> None:
     sql_str = """
         INSERT INTO actions(id, utc_date, action_type, action_id, coin, amount, investment, wallet)
@@ -78,7 +57,6 @@ def write_data(conn: sqlite3.Connection, records: list[Ations]) -> None:
     """
 
     cursor = conn.cursor()
-    logging.debug(sql_str)
     cursor.executemany(sql_str, records)
     conn.commit()
     cursor.close()
@@ -88,7 +66,6 @@ def get_op_id(action_id_list: list[action_ids], action_utc: str) -> str:
     action_id = next(
         (sub["action_id"] for sub in action_id_list if sub["action_utc"] == action_utc), None
     )
-    logging.debug(action_id)
     if not action_id:
         action_id = str(uuid.uuid4())
         action_id_list.append(
@@ -101,12 +78,9 @@ def get_op_id(action_id_list: list[action_ids], action_utc: str) -> str:
 
 
 def load(file_path: str) -> list[dict[str, str]]:
-    dataloaded: list[dict[str, str]] = []
+    dataloaded: list[dict[str, str]]
     with open(file_path, mode="r", encoding="utf-8") as csv_file:
-        dataloaded = [
-            {k: v for k, v in row.items()}
-            for row in csv.DictReader(csv_file, skipinitialspace=True)
-        ]
+        dataloaded = [dict(row.items()) for row in csv.DictReader(csv_file, skipinitialspace=True)]
 
     return dataloaded
 
@@ -124,12 +98,16 @@ def process_data_type_2(csv_reader: list[dict[str, str]]) -> list[Ations]:
         action_id = row_id
         if line["Operation"] == "POS savings interest":
             action_type = "INTEREST"
-        elif line["Operation"] == "POS savings purchase":
-            action_type = "TRANSFER_OUT"
-        elif line["Operation"] == "POS savings redemption":
-            action_type = "TRANSFER_IN"
-        elif line["Operation"] in ["transfer_out", "transfer_in", "Withdraw", "Deposit", "Fee"]:
+        elif line["Operation"] in ["POS savings purchase", "POS savings redemption"]:
+            action_type = "TRANSFER"
+        elif line["Operation"] in ["Withdraw", "Deposit"]:
             action_type = line["Operation"].upper()  # type: ignore[assignment]
+        elif line["Operation"] in ["transfer_out", "transfer_in"]:
+            action_type = "TRANSFER"
+            action_id = get_op_id(action_id_list, line["UTC_Time"])
+        elif line["Operation"] == "Fee":
+            action_type = line["Operation"].upper()  # type: ignore[assignment]
+            action_id = get_op_id(action_id_list, line["UTC_Time"])
         elif line["Operation"] in [
             "Small assets exchange BNB",
             "Large OTC trading",
@@ -144,8 +122,6 @@ def process_data_type_2(csv_reader: list[dict[str, str]]) -> list[Ations]:
             raise Exception("Error: invalid action type")
 
         investment = round(float(line["Investment"]), 8) if line["Investment"] else 0.00
-
-        logging.debug(f"{action_type=}")
         action_list.append(
             {
                 "id": row_id,

@@ -47,10 +47,9 @@ VALUES
 ("FEE"), -- this should affect assets amount
 ("INTEREST"), -- this should affect assets amount
 ("SWAP"), -- this should affect assets amount
-("TRANSFER_IN"), -- this should affect wallet balance
-("TRANSFER_OUT"), -- this should affect wallet balance
-("LOSSES"), -- Thit cancel out gains, this affect investment
-("GAINS"); -- Thit cancel out losses, this affect investment
+("TRANSFER"), -- this should affect wallet balance
+("LOSS"), -- Thit cancel out gains, this affect investment
+("GAIN"); -- Thit cancel out losses, this affect investment
 
 INSERT INTO coins(name)
 VALUES
@@ -76,5 +75,5 @@ INSERT INTO wallets(name)
 VALUES
 ("BINANCE"),
 ("TREZOR"),
-("DAEDALUS"),
+("YOROI"),
 ("PHANTOM");
