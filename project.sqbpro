@@ -1,10 +1,8 @@
-<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="/home/juanpa/Projects/reports/sqlite2.db" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="3"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="2615"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><current_table name="4,17:mainoperation_details"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="coins" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_"><sort/><column_widths><column index="1" value="60"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table><table schema="main" name="operation_details" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_"><sort/><column_widths><column index="1" value="317"/><column index="2" value="329"/><column index="3" value="60"/><column index="4" value="115"/><column index="6" value="75"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="investment">SELECT SUM(investment) AS investment
-FROM operation_details;</sql><sql name="details">SELECT o.utc_date, o.op_type, d.id, d.coin, d.amount, d.investment
-FROM operations AS o
-INNER JOIN operation_details AS d
-ON o.id=d.op_id
-ORDER BY utc_date;
-</sql><sql name="update">UPDATE operation_details
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="/home/juanpa/Projects/reports/sqlite2.db" readonly="0" foreign_keys="0" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="0" synchronous="1"/><attached/><window><main_tabs open="structure browser pragmas query" current="3"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="2986"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><current_table name="4,11:mainaction_type"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="action_type" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_"><sort/><column_widths><column index="1" value="109"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="investment">SELECT *
+FROM portfolio;</sql><sql name="details">SELECT *
+FROM actions
+WHERE action_type = &quot;WITHDRAW&quot;
+ORDER BY utc_date;</sql><sql name="update">UPDATE operation_details
 SET investment = 62.5
 WHERE id = &quot;5bf597cd-7723-43ce-ac4e-46448f8b7afd&quot;;
-</sql><current_tab id="1"/></tab_sql></sqlb_project>
+</sql><current_tab id="0"/></tab_sql></sqlb_project>

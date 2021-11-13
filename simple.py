@@ -4,10 +4,12 @@ import sys
 import logging
 import csv
 import uuid
-import sqlite3
+from sqlite3 import Connection
 from os import path
 from typing import TypedDict, Literal
 from datetime import datetime
+
+from tools import startdb
 
 
 class action_ids(TypedDict):
@@ -39,18 +41,7 @@ class Ations(TypedDict):
     wallet: str
 
 
-def startdb() -> sqlite3.Connection:
-    conn = sqlite3.connect(
-        "./sqlite2.db", detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
-    )
-    cursor = conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON;")
-    conn.commit()
-    cursor.close()
-    return conn
-
-
-def write_data(conn: sqlite3.Connection, records: list[Ations]) -> None:
+def write_data(conn: Connection, records: list[Ations]) -> None:
     sql_str = """
         INSERT INTO actions(id, utc_date, action_type, action_id, coin, amount, investment, wallet)
         VALUES(:id, :utc_date, :action_type, :action_id, :coin, :amount, :investment, :wallet);
@@ -96,32 +87,33 @@ def process_data_type_2(csv_reader: list[dict[str, str]]) -> list[Ations]:
         action_type: ACTION_TYPE
         row_id = str(uuid.uuid4())
         action_id = row_id
-        if line["Operation"] == "POS savings interest":
-            action_type = "INTEREST"
-        elif line["Operation"] in ["POS savings purchase", "POS savings redemption"]:
-            action_type = "TRANSFER"
-        elif line["Operation"] in ["Withdraw", "Deposit"]:
-            action_type = line["Operation"].upper()  # type: ignore[assignment]
-        elif line["Operation"] in ["transfer_out", "transfer_in"]:
-            action_type = "TRANSFER"
-            action_id = get_op_id(action_id_list, line["UTC_Time"])
-        elif line["Operation"] == "Fee":
-            action_type = line["Operation"].upper()  # type: ignore[assignment]
-            action_id = get_op_id(action_id_list, line["UTC_Time"])
-        elif line["Operation"] in [
+        transfer_choices = [
+            "POS savings purchase",
+            "POS savings redemption",
+            "transfer_out",
+            "transfer_in",
+        ]
+        swap_choices = [
             "Small assets exchange BNB",
             "Large OTC trading",
             "Buy",
             "Sell",
-        ]:
+        ]
+        same_choices = ["ADJUSTMENT", "TRANSFER", "INTEREST", "FEE", "WITHDRAW", "DEPOSIT"]
+        if line["Operation"] == "POS savings interest":
+            action_type = "INTEREST"
+        elif line["Operation"] in transfer_choices:
+            action_type = "TRANSFER"
+        elif line["Operation"] in swap_choices:
             action_type = "SWAP"
-            action_id = get_op_id(action_id_list, line["UTC_Time"])
-        elif line["Operation"] in ["ADJUSTMENT", "TRANSFER", "INTEREST", "FEE"]:
-            action_type = line["Operation"]  # type: ignore[assignment]
+        elif line["Operation"].upper() in same_choices:
+            action_type = line["Operation"].upper()  # type: ignore[assignment]
         else:
             raise Exception("Error: invalid action type")
 
-        investment = round(float(line["Investment"]), 8) if line["Investment"] else 0.00
+        if action_type in ["SWAP", "TRANSFER", "FEE"]:
+            action_id = get_op_id(action_id_list, line["UTC_Time"])
+
         action_list.append(
             {
                 "id": row_id,
@@ -130,14 +122,14 @@ def process_data_type_2(csv_reader: list[dict[str, str]]) -> list[Ations]:
                 "action_id": action_id,
                 "coin": line["Coin"],
                 "amount": round(float(line["Change"]), 8),
-                "investment": investment,
+                "investment": round(float(line["Investment"]), 8) if line["Investment"] else 0.00,
                 "wallet": line["Wallet"],
             }
         )
     return action_list
 
 
-def proccess_files(conn: sqlite3.Connection) -> None:
+def proccess_files(conn: Connection) -> None:
     file_list = "/home/juanpa/Projects/reports/statements/best-binance.csv"
     dataloaded = load(file_list)
     records = process_data_type_2(dataloaded)

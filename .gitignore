@@ -4,3 +4,5 @@
 **/__pycache__/
 !**/.gitkeep
 sqlite2.db
+data/zip/*
+data/csv/*

@@ -69,7 +69,8 @@ VALUES
 ("UNI"),
 ("USDT"),
 ("XMR"),
-("XRP");
+("XRP"),
+("NA");
 
 INSERT INTO wallets(name)
 VALUES
