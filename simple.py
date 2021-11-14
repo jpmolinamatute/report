@@ -5,7 +5,7 @@ import logging
 import csv
 import uuid
 from sqlite3 import Connection
-from os import path
+from os import path, listdir
 from typing import TypedDict, Literal
 from datetime import datetime
 
@@ -66,6 +66,51 @@ def get_op_id(action_id_list: list[action_ids], action_utc: str) -> str:
             }
         )
     return action_id
+
+
+def load_hist_file(single_file) -> list[tuple[int, str, int, float, float, float, float]]:
+    file_content: list[tuple[int, str, int, float, float, float, float]] = []
+    pair = single_file.split("-")[0]
+    full_path = path.join("./data/csv", single_file)
+    print(f"Opening: {full_path}")
+    with open(full_path, mode="r", encoding="utf-8") as csv_file:
+        reader = csv.reader(csv_file)
+        #      0      1    2   3   4       5        6
+        # Open time,Open,High,Low,Close,Volume,Close time,Quote asset volume,Number of trades,
+        # Taker buy base asset volume,Taker buy quote asset volume,Ignore
+        # open_time pair close_time open high low close
+        for row in reader:
+            file_content.append(
+                (
+                    int(row[0]),
+                    pair,
+                    int(row[6]),
+                    float(row[1]),
+                    float(row[2]),
+                    float(row[3]),
+                    float(row[4]),
+                )
+            )
+    return file_content
+
+
+def write_history(
+    conn: Connection, history: list[tuple[int, str, int, float, float, float, float]]
+) -> None:
+    sql_str = """
+        INSERT INTO history(open_time, pair, close_time, open, high, low, close)
+        VALUES(?, ?, ?, ?, ?, ?, ?);
+    """
+    cursor = conn.cursor()
+    cursor.executemany(sql_str, history)
+    conn.commit()
+    cursor.close()
+
+
+def get_history(conn: Connection) -> None:
+    for single_file in listdir("./data/csv/"):
+        result = load_hist_file(single_file)
+        write_history(conn, result)
 
 
 def load(file_path: str) -> list[dict[str, str]]:
@@ -141,6 +186,7 @@ def main() -> None:
     logging.info(f"Script {path.basename(__file__)} has started")
     conn = startdb()
     proccess_files(conn)
+    get_history(conn)
     conn.close()
 
 

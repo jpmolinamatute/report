@@ -5,14 +5,23 @@ import logging
 from os import path
 from sqlite3 import Connection
 import uuid
+from datetime import datetime
 from definitions import DICT_COIN, Asset, RAW_ASSET, Swap_Coin
 from tools import startdb
 
 
-def get_price(coin: str, utc_date: str) -> float:
-    # @INFO I'll use some sort of API call to get the price
-    print(f"{coin=}      {utc_date=}")
-    return 40.00
+def get_pair(coin1: str, coin2: str) -> str:
+    result = ""
+    order = ("BUSD", "USDT", "BTC", "ETH", "BNB")
+    for o in order:
+        if coin1 == o:
+            result = f"{coin2}{coin1}"
+        elif coin2 == o:
+            result = f"{coin1}{coin2}"
+
+    if not result:
+        raise Exception(f"ERROR: invalid pair '{coin2}' <-> '{coin1}'")
+    return result
 
 
 def write_data(conn: Connection, sql_str: str, values: dict) -> None:
@@ -22,8 +31,32 @@ def write_data(conn: Connection, sql_str: str, values: dict) -> None:
     cursor.close()
 
 
-def get_dest_value(coin: str, utc_date: str, amount: float) -> float:
-    price = get_price(coin, utc_date)
+def get_price(conn: Connection, pair: str, open_time: int) -> float:
+    sql_str = """
+        SELECT open, high, low, close
+        FROM history
+        WHERE open_time = :open_time
+        AND pair = :pair;
+    """
+    cursor = conn.cursor()
+    cursor.execute(sql_str, {"pair": pair, "open_time": open_time})
+    rows = cursor.fetchall()
+    if rows:
+        row = rows[0]
+        cursor.close()
+        result = round((row[0] + row[1] + row[2] + row[3]) / 4, 8) if row else 0.0
+    else:
+        logging.error(f"ERROR: {pair=} {open_time=} NOT FOUND")
+        logging.error(rows)
+        result = 0.0
+    return result
+
+
+def get_dest_value(conn: Connection, coin1: str, coin2: str, utc_date: str, amount: float) -> float:
+    utc_date = f"{utc_date[:-2]}00"
+    date_int = int(datetime.strptime(utc_date, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+    pair = get_pair(coin1, coin2)
+    price = get_price(conn, pair, date_int)
     return price * amount
 
 
@@ -124,8 +157,9 @@ def process(conn: Connection, asset_list: list[Asset]) -> None:
                     conn, src_id, src_investment_debit
                 )  # src_investment_debit must be negative
                 track[src_coin]["investment"] += src_investment_debit
-                value = get_dest_value(dest_coin, utc_date, dest_amount)
+                value = get_dest_value(conn, src_coin, dest_coin, utc_date, dest_amount)
                 update_investment(conn, dest_id, value)  # value must be positive
+                action_type = ""
                 if value > src_tracked_investment:
                     action_type = "GAIN"
                 elif value < src_tracked_investment:

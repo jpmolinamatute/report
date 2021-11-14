@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS actions;
 DROP TABLE IF EXISTS coins;
 DROP TABLE IF EXISTS wallets;
 DROP TABLE IF EXISTS action_type;
+DROP TABLE IF EXISTS history;
 
 CREATE TABLE action_type(
     name TEXT NOT NULL PRIMARY KEY
@@ -31,6 +32,20 @@ CREATE TABLE actions(
     FOREIGN KEY(wallet) REFERENCES wallets(name)
     FOREIGN KEY(action_type) REFERENCES action_type(name)
 );
+
+
+CREATE TABLE history(
+    open_time INTEGER NOT NULL,
+    pair TEXT NOT NULL,
+    close_time INTEGER NOT NULL,
+    open REAL NOT NULL,
+    high REAL NOT NULL,
+    low REAL NOT NULL,
+    close REAL NOT NULL,
+    PRIMARY KEY (open_time, pair)
+);
+
+
 
 CREATE VIEW portfolio AS
 SELECT coin, ROUND(SUM(amount),8) AS amount, SUM(investment) AS investment
