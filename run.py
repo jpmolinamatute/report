@@ -95,16 +95,18 @@ def get_data(conn: Connection) -> list[RAW_ASSET]:
 
 def clean_data(raw_asset_list: list[RAW_ASSET]) -> list[Asset]:
     def loop(raw: RAW_ASSET) -> Asset:
-        return {
-            "id": raw[0],
-            "utc_date": raw[1],
-            "action_type": raw[2],
-            "action_id": raw[3],
-            "coin": raw[4],
-            "amount": raw[5],
-            "investment": raw[6],
-            "wallet": raw[7],
-        }
+        my_dict: Asset = {}
+        (
+            my_dict["id"],
+            my_dict["utc_date"],
+            my_dict["action_type"],
+            my_dict["action_id"],
+            my_dict["coin"],
+            my_dict["amount"],
+            my_dict["investment"],
+            my_dict["wallet"],
+        ) = raw
+        return my_dict
 
     return [loop(r) for r in raw_asset_list]
 
