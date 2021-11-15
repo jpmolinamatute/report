@@ -175,7 +175,7 @@ def process_data_type_2(csv_reader: list[dict[str, str]]) -> list[Ations]:
 
 
 def proccess_files(conn: Connection) -> None:
-    file_list = "/home/juanpa/Projects/reports/statements/best-binance.csv"
+    file_list = "./data/csv/test-data.csv"
     dataloaded = load(file_list)
     records = process_data_type_2(dataloaded)
     write_data(conn, records)

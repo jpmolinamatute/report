@@ -14,10 +14,12 @@ def get_pair(coin1: str, coin2: str) -> str:
     result = ""
     order = ("BUSD", "USDT", "BTC", "ETH", "BNB")
     for o in order:
-        if coin1 == o:
-            result = f"{coin2}{coin1}"
-        elif coin2 == o:
-            result = f"{coin1}{coin2}"
+        if o in [coin1, coin2]:
+            if coin1 == o:
+                result = f"{coin2}{coin1}"
+            else:
+                result = f"{coin1}{coin2}"
+            break
 
     if not result:
         raise Exception(f"ERROR: invalid pair '{coin2}' <-> '{coin1}'")
