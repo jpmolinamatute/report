@@ -111,6 +111,16 @@ def clean_data(raw_asset_list: list[RAW_ASSET]) -> list[Asset]:
     return [loop(r) for r in raw_asset_list]
 
 
+def is_complete_swap(coin: str, src_coin_sum_amount: float) -> bool:
+    result = True
+    # src_coin_sum_amount == 0 means a complete swap
+    if src_coin_sum_amount > 0:
+        result = False
+    elif src_coin_sum_amount < 0:
+        raise Exception(f"Error: '{coin}' has a negative value")
+    return result
+
+
 def process(conn: Connection, asset_list: list[Asset]) -> None:
     track: DICT_COIN = {}
     swap_cache: dict[str, Swap_Coin] = {}
@@ -123,7 +133,6 @@ def process(conn: Connection, asset_list: list[Asset]) -> None:
                 "amount": 0.0,
                 "investment": 0.0,
             }
-
         if asset["action_type"] in ["DEPOSIT", "WITHDRAW"]:
             track[coin]["investment"] += asset["investment"]
         elif asset["action_type"] in ["FEE", "INTEREST", "ADJUSTMENT"]:

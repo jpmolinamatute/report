@@ -3,7 +3,7 @@
 ## Definitions ##
 
 1. **ASSET**: the amount of a specific crypto currency.  
-2. **INVESTMENT**: the value in fiat of a given asset at a specific point in time.  
+2. **INVESTMENT**: the value in fiat of a given asset at a specific point in time. Investment consist of Deposit, Withdral, Gain and Loss.  
 3. **ACTION**:
     * **SWAP**: affect mainly assets but there is always a gain or loss that would affect investment as well. Swap consists of at least two transactions plus a gain/loss and possibly a Fee transaction.  
     * **DEPOSIT & WITHDRAWL**: affect both asset and investment.  
@@ -11,7 +11,7 @@
     * **GAIN & LOSS**: affect only investment.  
     * **TRANSFER**: affect mostly wallet but it may affect assets by Fees and always comes in pairs.  
 
-## Steps ##
+## Process ##
 
 1. Get data ("SWAP", "DEPOSIT", "WITHDRAW")  
 2. We loop through each trasction and check **action_type**.  
