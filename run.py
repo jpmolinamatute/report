@@ -5,28 +5,35 @@ import logging
 from os import path
 from sqlite3 import Connection
 import uuid
+import json
 from datetime import datetime
+from typing import Union
 from definitions import DICT_COIN, Asset, RAW_ASSET, Swap_Coin
 from tools import startdb
 
 
 def get_pair(coin1: str, coin2: str) -> str:
     result = ""
-    order = ("BUSD", "USDT", "BTC", "ETH", "BNB")
-    for o in order:
-        if o in [coin1, coin2]:
-            if coin1 == o:
-                result = f"{coin2}{coin1}"
-            else:
-                result = f"{coin1}{coin2}"
-            break
+    if coin1 != coin2:
+        for o in ("BUSD", "USDT", "BTC", "ETH", "BNB"):
+            if o in [coin1, coin2]:
+                if coin1 == o:
+                    result = f"{coin2}{coin1}"
+                else:
+                    result = f"{coin1}{coin2}"
+                break
 
-    if not result:
+        if not result:
+            raise Exception(f"ERROR: invalid pair '{coin2}' <-> '{coin1}'")
+    else:
         raise Exception(f"ERROR: invalid pair '{coin2}' <-> '{coin1}'")
+
     return result
 
 
-def write_data(conn: Connection, sql_str: str, values: dict) -> None:
+def write_data(
+    conn: Connection, sql_str: str, values: Union[dict[str, Union[str, float]], Asset]
+) -> None:
     cursor = conn.cursor()
     cursor.execute(sql_str, values)
     conn.commit()
@@ -128,15 +135,17 @@ def process(conn: Connection, asset_list: list[Asset]) -> None:
         coin = asset["coin"]
         action_id = asset["action_id"]
         amount = asset["amount"]
+
         if coin not in track:
             track[coin] = {
                 "amount": 0.0,
                 "investment": 0.0,
             }
+        track[coin]["amount"] += amount
         if asset["action_type"] in ["DEPOSIT", "WITHDRAW"]:
             track[coin]["investment"] += asset["investment"]
-        elif asset["action_type"] in ["FEE", "INTEREST", "ADJUSTMENT"]:
-            track[coin]["amount"] = round(track[coin]["amount"] + amount, 8)
+        elif asset["action_type"] in ["FEE", "INTEREST", "ADJUSTMENT", "MINING"]:
+            pass
         else:
             # we process SWAP here
             # we have two rows and we can't control the order of them
@@ -166,10 +175,12 @@ def process(conn: Connection, asset_list: list[Asset]) -> None:
                 src_tracked_investment = track[src_coin]["investment"]
                 percentage_asset_sold = round(src_tracked_amount / src_amount, 3)
                 src_investment_debit = (src_tracked_investment * percentage_asset_sold) * -1
-                update_investment(
-                    conn, src_id, src_investment_debit
-                )  # src_investment_debit must be negative
+
+                # update_investment(
+                #     conn, src_id, src_investment_debit
+                # )  # src_investment_debit must be negative
                 track[src_coin]["investment"] += src_investment_debit
+
                 value = get_dest_value(conn, src_coin, dest_coin, utc_date, dest_amount)
                 update_investment(conn, dest_id, value)  # value must be positive
                 action_type = ""
@@ -177,20 +188,29 @@ def process(conn: Connection, asset_list: list[Asset]) -> None:
                     action_type = "GAIN"
                 elif value < src_tracked_investment:
                     action_type = "LOSS"
-                if action_type:
-                    add_gain_loss(
-                        conn,
-                        {
-                            "id": str(uuid.uuid4()),
-                            "utc_date": utc_date,
-                            "action_type": action_type,
-                            "action_id": action_id,
-                            "coin": "NA",
-                            "amount": 0.00,
-                            "investment": value - src_tracked_investment,
-                            "wallet": wallet,
-                        },
+                # logging.debug(f"{value=}     {src_tracked_investment=}")
+                # if action_type:
+                #     add_gain_loss(
+                #         conn,
+                #         {
+                #             "id": str(uuid.uuid4()),
+                #             "utc_date": utc_date,
+                #             "action_type": action_type,
+                #             "action_id": action_id,
+                #             "coin": "NA",
+                #             "amount": 0.00,
+                #             "investment": value - src_tracked_investment,
+                #             "wallet": wallet,
+                #         },
+                #     )
+                # logging.debug(json.dumps(swap_cache, indent=4, sort_keys=True))
+                logging.debug(
+                    json.dumps(
+                        track,
+                        indent=4,
+                        sort_keys=True,
                     )
+                )
 
 
 def main() -> None:

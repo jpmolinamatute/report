@@ -5,5 +5,4 @@
 !**/.gitkeep
 sqlite2.db
 data/zip/*
-data/csv/*
-!data/csv/best-binance.csv
+data/csv/history/*

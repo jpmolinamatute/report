@@ -154,7 +154,7 @@ def process_data_type_2(csv_reader: list[dict[str, str]]) -> list[Ations]:
         elif line["Operation"].upper() in same_choices:
             action_type = line["Operation"].upper()  # type: ignore[assignment]
         else:
-            raise Exception("Error: invalid action type")
+            raise Exception(f"Error: action '{line['Operation']}' is invalid")
 
         if action_type in ["SWAP", "TRANSFER", "FEE"]:
             action_id = get_op_id(action_id_list, line["UTC_Time"])
@@ -166,8 +166,8 @@ def process_data_type_2(csv_reader: list[dict[str, str]]) -> list[Ations]:
                 "action_type": action_type,
                 "action_id": action_id,
                 "coin": line["Coin"],
-                "amount": round(float(line["Change"]), 8),
-                "investment": round(float(line["Investment"]), 8) if line["Investment"] else 0.00,
+                "amount": float(line["Amount"]),
+                "investment": float(line["Investment"]) if line["Investment"] else 0.00,
                 "wallet": line["Wallet"],
             }
         )
@@ -186,7 +186,7 @@ def main() -> None:
     logging.info(f"Script {path.basename(__file__)} has started")
     conn = startdb()
     proccess_files(conn)
-    get_history(conn)
+    # get_history(conn)
     conn.close()
 
 
