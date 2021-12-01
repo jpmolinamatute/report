@@ -11,18 +11,21 @@ from typing import Union
 from definitions import DICT_COIN, Asset, RAW_ASSET, Swap_Coin
 from tools import startdb
 
+FIAT_VALUE = 1.25
+STABLE_COIN = ("BUSD", "USDT")
+OTHER_BASE_COIN = ("BTC", "ETH", "BNB")
+
 
 def get_pair(coin1: str, coin2: str) -> str:
     result = ""
     if coin1 != coin2:
-        for o in ("BUSD", "USDT", "BTC", "ETH", "BNB"):
+        for o in STABLE_COIN + OTHER_BASE_COIN:
             if o in [coin1, coin2]:
                 if coin1 == o:
                     result = f"{coin2}{coin1}"
                 else:
                     result = f"{coin1}{coin2}"
                 break
-
         if not result:
             raise Exception(f"ERROR: invalid pair '{coin2}' <-> '{coin1}'")
     else:
@@ -53,7 +56,7 @@ def get_price(conn: Connection, pair: str, open_time: int) -> float:
     if rows:
         row = rows[0]
         cursor.close()
-        result = round((row[0] + row[1] + row[2] + row[3]) / 4, 8) if row else 0.0
+        result = round((row[0] + row[1] + row[2] + row[3]) / 4, 8)
     else:
         logging.error(f"ERROR: {pair=} {open_time=} NOT FOUND")
         logging.error(rows)
@@ -64,9 +67,26 @@ def get_price(conn: Connection, pair: str, open_time: int) -> float:
 def get_dest_value(conn: Connection, coin1: str, coin2: str, utc_date: str, amount: float) -> float:
     utc_date = f"{utc_date[:-2]}00"
     date_int = int(datetime.strptime(utc_date, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-    pair = get_pair(coin1, coin2)
-    price = get_price(conn, pair, date_int)
-    return price * amount
+    #     p     a          v
+    # 186.84 4.61SOL 861.3324BUSD
+    # price = value / amount
+    # amout = value / price
+    # value = price * amount
+    if coin1 in STABLE_COIN or coin2 in STABLE_COIN:
+        pair = get_pair(coin1, coin2)
+        value = get_price(conn, pair, date_int)
+        price = value / amount
+    else:
+        pair1 = get_pair(coin1, coin2)
+        value1 = get_price(conn, pair, date_int)
+        base_coin = coin1 if coin1 in OTHER_BASE_COIN else coin2
+        pair2 = get_pair(base_coin, STABLE_COIN[0])
+        value2 = get_price(conn, pair2, date_int)
+        logging.error(
+            "Fix this, when a swap is done and no stable coin is involved, so I need to find the value in the base_coin so that I can convert it into stable_coin and figure out the actual price in fiat"
+        )
+
+    return price * FIAT_VALUE
 
 
 def update_investment(conn: Connection, row_id: str, investment: float) -> None:
@@ -128,9 +148,61 @@ def is_complete_swap(coin: str, src_coin_sum_amount: float) -> bool:
     return result
 
 
+def calculate_gain_loss(
+    conn: Connection, action_id: str, track: DICT_COIN, swap: Swap_Coin
+) -> None:
+    utc_date = swap["utc_date"]
+    wallet = swap["wallet"]
+
+    swap_src_coin = swap["src"]["coin"]
+    swap_src_amount = swap["src"]["amount"]
+    swap_src_id = swap["src"]["id"]
+
+    swap_dest_coin = swap["dest"]["coin"]
+    swap_dest_amount = swap["dest"]["amount"]
+    swap_dest_id = swap["dest"]["id"]
+
+    tracked_src_amount = track[swap_src_coin]["amount"]
+    tracked_src_investment = track[swap_src_coin]["investment"]
+
+    src_investment_debit = tracked_src_investment * (tracked_src_amount / swap_src_amount)
+
+    value = get_dest_value(conn, swap_src_coin, swap_dest_coin, utc_date, swap_dest_amount)
+    track[swap_src_coin]["amount"] = round(track[swap_src_coin]["amount"] + swap_src_amount, 8)
+    track[swap_src_coin]["investment"] += src_investment_debit
+    track[swap_dest_coin]["amount"] = round(track[swap_dest_coin]["amount"] + swap_dest_amount, 8)
+    track[swap_dest_coin]["investment"] += value
+
+    update_investment(
+        conn, swap_src_id, src_investment_debit
+    )  # src_investment_debit must be negative
+
+    update_investment(conn, swap_dest_id, value)  # value must be positive
+    action_type = ""
+    if value > tracked_src_investment:
+        action_type = "GAIN"
+    elif value < tracked_src_investment:
+        action_type = "LOSS"
+
+    if action_type:
+        add_gain_loss(
+            conn,
+            {
+                "id": str(uuid.uuid4()),
+                "utc_date": utc_date,
+                "action_type": action_type,
+                "action_id": action_id,
+                "coin": "NA",
+                "amount": 0.00,
+                "investment": value - tracked_src_investment,
+                "wallet": wallet,
+            },
+        )
+
+
 def process(conn: Connection, asset_list: list[Asset]) -> None:
     track: DICT_COIN = {}
-    swap_cache: dict[str, Swap_Coin] = {}
+    swap: dict[str, Swap_Coin] = {}
     for asset in asset_list:
         coin = asset["coin"]
         action_id = asset["action_id"]
@@ -141,76 +213,33 @@ def process(conn: Connection, asset_list: list[Asset]) -> None:
                 "amount": 0.0,
                 "investment": 0.0,
             }
-        track[coin]["amount"] += amount
+
         if asset["action_type"] in ["DEPOSIT", "WITHDRAW"]:
             track[coin]["investment"] += asset["investment"]
-        elif asset["action_type"] in ["FEE", "INTEREST", "ADJUSTMENT", "MINING"]:
-            pass
-        else:
+            track[coin]["amount"] = round(track[coin]["amount"] + amount, 8)
+        elif asset["action_type"] in ["FEE", "INTEREST", "ADJUSTMENT", "MINING", "TRANSFER"]:
+            track[coin]["amount"] = round(track[coin]["amount"] + amount, 8)
+        elif asset["action_type"] == "SWAP":
             # we process SWAP here
             # we have two rows and we can't control the order of them
-            if action_id not in swap_cache:
-                swap_cache[action_id] = {"utc_date": asset["utc_date"], "wallet": asset["wallet"]}
+            # swap should contain only two transactions
+            if action_id not in swap:
+                swap = {action_id: {"utc_date": asset["utc_date"], "wallet": asset["wallet"]}}
 
-            if amount > 0:
-                swap_cache[action_id]["src"] = {"amount": amount, "coin": coin, "id": asset["id"]}
-            else:
-                swap_cache[action_id]["dest"] = {
-                    "amount": amount * -1,
-                    "coin": coin,
-                    "id": asset["id"],
-                }
-
+            src_dest = "dest" if amount > 0.0 else "src"
+            swap[action_id][src_dest] = {"amount": amount, "coin": coin, "id": asset["id"]}
             # we make sure we have the two rows stored in cache
-            if "dest" in swap_cache[action_id] and "src" in swap_cache[action_id]:
-                src_coin = swap_cache[action_id]["src"]["coin"]
-                utc_date = swap_cache[action_id]["utc_date"]
-                wallet = swap_cache[action_id]["wallet"]
-                src_amount = swap_cache[action_id]["src"]["amount"]
-                src_id = swap_cache[action_id]["src"]["id"]
-                dest_coin = swap_cache[action_id]["dest"]["coin"]
-                dest_amount = swap_cache[action_id]["dest"]["amount"]
-                dest_id = swap_cache[action_id]["dest"]["id"]
-                src_tracked_amount = track[src_coin]["amount"]
-                src_tracked_investment = track[src_coin]["investment"]
-                percentage_asset_sold = round(src_tracked_amount / src_amount, 3)
-                src_investment_debit = (src_tracked_investment * percentage_asset_sold) * -1
-
-                # update_investment(
-                #     conn, src_id, src_investment_debit
-                # )  # src_investment_debit must be negative
-                track[src_coin]["investment"] += src_investment_debit
-
-                value = get_dest_value(conn, src_coin, dest_coin, utc_date, dest_amount)
-                update_investment(conn, dest_id, value)  # value must be positive
-                action_type = ""
-                if value > src_tracked_investment:
-                    action_type = "GAIN"
-                elif value < src_tracked_investment:
-                    action_type = "LOSS"
-                # logging.debug(f"{value=}     {src_tracked_investment=}")
-                # if action_type:
-                #     add_gain_loss(
-                #         conn,
-                #         {
-                #             "id": str(uuid.uuid4()),
-                #             "utc_date": utc_date,
-                #             "action_type": action_type,
-                #             "action_id": action_id,
-                #             "coin": "NA",
-                #             "amount": 0.00,
-                #             "investment": value - src_tracked_investment,
-                #             "wallet": wallet,
-                #         },
-                #     )
-                # logging.debug(json.dumps(swap_cache, indent=4, sort_keys=True))
-                logging.debug(
-                    json.dumps(
-                        track,
-                        indent=4,
-                        sort_keys=True,
-                    )
-                )
+            if "dest" in swap[action_id] and "src" in swap[action_id]:
+                calculate_gain_loss(conn, action_id, track, swap[action_id])
+        else:
+            raise Exception(f"Unknown action {asset['action_type']}")
+    logging.debug(
+        json.dumps(
+            track,
+            indent=4,
+            sort_keys=True,
+        )
+    )
 
 
 def main() -> None:
