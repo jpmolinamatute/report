@@ -13,21 +13,20 @@
 
 ## Process ##
 
-1. Get data ("SWAP", "DEPOSIT", "WITHDRAW")  
-2. We loop through each trasction and check **action_type**.  
-    * if "DEPOSIT" we add to investment cache
-    * if "WITHDRAWL" we subtract from investment cache
+1. Get data  
+2. We loop through each trasction, check **action_type** and updating TRACKED_INVESTMENT
+    * if "DEPOSIT" or "WITHDRAWL" we add/subtract to/from 'TRACKED_INVESTMENT["investment"]'
+    * if "FEE", "INTEREST", "MINING" or "ADJUSTMENT" we add/subtract to/from asset 'TRACKED_INVESTMENT["amount"]'
     * if "SWAP" we calculate
         * we are going to update the investment column
         * **IS THIS A COMPLETE OR PARTIAL SWAP?**
-            * if SUM of negative coin is **ZERO**, is considered complete
-            * if SUM negative coin is **POSITIVE** is considered partial
-            * if SUM negative coin is **NEGATIVE** we need to raise an exception
-        * the "current" amount of each coin.
-        * the investment until this point assigned to this coin.
-        * update the negative coin with a negative investment
-        * update the positive coin with its value in fiat
-        * compare the investment of the negative coin with the value in fiat of the positive coin.
-            * if the value is greater than the investment, we need to register a "GAIN" since we had some profit.
-            * if the value is less than the investment, we need to register a "LOSS" since we had some loss.
+            * if SUM the src coin and the dest coin is **ZERO**, is considered complete
+            * if SUM the src coin and the dest coin coin is **POSITIVE** is considered partial
+            * if SUM the src coin and the dest coin is **NEGATIVE** we need to raise an exception
+
+        * The investment as result of swap, the dest_amount has a value in fiat representing an investment. We should update the src coin with a negative investment and the dest coint with a positive investment.
+
+        * substract "'TRACKED_INVESTMENT["investment"]' minus "dest investment".
+            * if the value is positive, we need to register a "GAIN" since we had some profit and add it to 'TRACKED_INVESTMENT["investment"]'.
+            * if the value is negative, we need to register a "LOSS" since we had some loss and add it to 'TRACKED_INVESTMENT["investment"]'.
             * if the value is equal to the investment, we DON'T do anything.

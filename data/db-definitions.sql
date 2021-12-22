@@ -23,13 +23,12 @@ CREATE TABLE actions(
     id TEXT NOT NULL PRIMARY KEY,
     utc_date TEXT NOT NULL,
     action_type TEXT NOT NULL,
-    action_id TEXT NOT NULL,
     coin TEXT NOT NULL,
     amount REAL NOT NULL,
     investment REAL NOT NULL DEFAULT 0.0,
     wallet TEXT NOT NULL,
     FOREIGN KEY(coin) REFERENCES coins(coin_token),
-    FOREIGN KEY(wallet) REFERENCES wallets(name)
+    FOREIGN KEY(wallet) REFERENCES wallets(name),
     FOREIGN KEY(action_type) REFERENCES action_type(name)
 );
 
@@ -78,5 +77,6 @@ INSERT INTO wallets(name)
 VALUES
 ("BINANCE"),
 ("TREZOR"),
+("METAMASK"),
 ("YOROI"),
 ("PHANTOM");
