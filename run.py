@@ -13,9 +13,9 @@ def main() -> None:
     logging.info(f"Script {path.basename(__file__)} has started")
     c = Collect("./sqlite3.db")
     c.proccess_raw_statement("./data/csv/best-binance.csv")
-    c.save_history("./data/csv/history")
-    c.logger.debug(json.dumps(c.track["ATOM"], indent=4, sort_keys=True))
-    c.logger.debug(f"{c.counter1=}  {c.counter2=}")
+    portfolio = c.get_portfolio()
+    c.logger.debug(json.dumps(portfolio, indent=4, sort_keys=True))
+    c.save_history("./data/csv/history/")
     c.close_db()
 
 

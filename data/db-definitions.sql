@@ -1,6 +1,7 @@
 PRAGMA foreign_keys = ON;
 PRAGMA optimize;
 DROP VIEW IF EXISTS portfolio;
+DROP VIEW IF EXISTS actual_investment;
 DROP TABLE IF EXISTS actions;
 DROP TABLE IF EXISTS coins;
 DROP TABLE IF EXISTS wallets;
@@ -33,11 +34,18 @@ CREATE TABLE actions(
 );
 
 CREATE VIEW portfolio AS
-SELECT coin, ROUND(SUM(amount),8) AS amount, SUM(investment) AS investment
+SELECT coin, ROUND(SUM(amount),8) AS amount, ROUND(SUM(investment), 3) AS investment
 FROM actions
 GROUP BY coin
 HAVING ROUND(SUM(amount),8) > 0.00
 ORDER BY coin;
+
+
+CREATE VIEW actual_investment AS
+SELECT ROUND(SUM(investment), 3) AS investment
+FROM actions
+WHERE action_type = "DEPOSIT"
+ORDER BY utc_date;
 
 INSERT INTO action_type(name)
 VALUES

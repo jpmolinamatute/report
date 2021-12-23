@@ -17,7 +17,7 @@ if [[ ! -d ${csv_dir} ]]; then
 fi
 
 for pair in "${COINS[@]}"; do
-    for i in {3..11}; do
+    for i in {3..12}; do
         if [[ ${i} -lt 10 ]]; then
             month="0${i}"
         else
