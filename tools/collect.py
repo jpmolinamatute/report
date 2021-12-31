@@ -7,6 +7,7 @@ from os import path, listdir
 from typing import Any
 
 import requests
+from prettytable import PrettyTable
 
 from .definitions import ACTION_TYPE
 
@@ -85,9 +86,7 @@ class Collect:
     FIAT_EXCHANGE_RATE = 1.28
 
     def __init__(self, dbfile: str = "./sqlite2.db") -> None:
-        self.conn = sqlite3.connect(
-            dbfile, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
-        )
+        self.conn = sqlite3.connect(dbfile, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
         self.start_db()
         self.logger = logging.getLogger("COLLECT")
         self.history_index_table = "history_index"
@@ -207,38 +206,6 @@ class Collect:
         else:
             raise Exception(f"ERROR: invalid directory '{csv_dir}'")
 
-    def calculate_swap_investment(self, swap: dict) -> float:
-        amount = swap["dest"]["amount"]
-        coin = swap["dest"]["coin"]
-        utc_date = swap["utc_date"]
-        if coin not in self.STABLE_COIN:
-            utc_date = f"{utc_date[:-2]}00"
-            date_int = int(datetime.strptime(utc_date, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-            price = self.get_price(f"{coin}BUSD", date_int)
-            investment = amount * price
-            investment = investment * self.FIAT_EXCHANGE_RATE
-        else:
-            investment = amount * self.FIAT_EXCHANGE_RATE
-        return investment
-
-    def get_price(self, pair: str, open_time: int) -> float:
-        sql_str = f"""
-            SELECT open, high, low, close
-            FROM {self.history_table}
-            WHERE open_time = :open_time
-            AND pair = :pair;
-        """
-
-        rows = self.query(sql_str, {"pair": pair, "open_time": open_time})
-        if rows:
-            row = rows[0]
-            result = (row[0] + row[1] + row[2] + row[3]) / 4
-        else:
-            logging.error(f"ERROR: {pair=} {open_time=} NOT FOUND")
-            logging.error(rows)
-            result = 0.0
-        return result
-
     def update_row_investment(self, row_id: str, investment: float, coin: str) -> None:
         sql_str = """
             UPDATE actions
@@ -248,51 +215,83 @@ class Collect:
         self.execute(sql_str, {"investment": investment, "id": row_id})
         self.track[coin]["investment"] += investment
 
-    def add_gain_loss(self, action: dict) -> None:
-        sql_str = """
-            INSERT INTO actions(id, utc_date, action_type, coin, amount, investment, wallet)
-            VALUES(:id, :utc_date, :action_type, :coin, :amount, :investment, :wallet);
-        """
-        self.execute(sql_str, action)
-        self.track[action["coin"]]["investment"] += action["investment"]
+    # def get_price(self, pair: str, open_time: int) -> float:
+    #     sql_str = f"""
+    #         SELECT open, high, low, close
+    #         FROM {self.history_table}
+    #         WHERE open_time = :open_time
+    #         AND pair = :pair;
+    #     """
+
+    #     rows = self.query(sql_str, {"pair": pair, "open_time": open_time})
+    #     if rows:
+    #         row = rows[0]
+    #         result = (row[0] + row[1] + row[2] + row[3]) / 4
+    #     else:
+    #         logging.error(f"ERROR: {pair=} {open_time=} NOT FOUND")
+    #         logging.error(rows)
+    #         result = 0.0
+    #     return result
+
+    # def calculate_swap_investment(self, swap: dict) -> float:
+    #     amount = swap["dest"]["amount"]
+    #     coin = swap["dest"]["coin"]
+    #     utc_date = swap["utc_date"]
+    #     if coin not in self.STABLE_COIN:
+    #         utc_date = f"{utc_date[:-2]}00"
+    #         date_int = int(datetime.strptime(utc_date, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+    #         price = self.get_price(f"{coin}BUSD", date_int)
+    #         investment = amount * price
+    #         investment = investment * self.FIAT_EXCHANGE_RATE
+    #     else:
+    #         investment = amount * self.FIAT_EXCHANGE_RATE
+    #     return investment
+
+    # def add_gain_loss(self, action: dict) -> None:
+    #     sql_str = """
+    #         INSERT INTO actions(id, utc_date, action_type, coin, amount, investment, wallet)
+    #         VALUES(:id, :utc_date, :action_type, :coin, :amount, :investment, :wallet);
+    #     """
+    #     self.execute(sql_str, action)
+    #     self.track[action["coin"]]["investment"] += action["investment"]
 
     def update_investment(self, swap: dict) -> None:
-        investment = self.calculate_swap_investment(swap)
+        # investment = self.calculate_swap_investment(swap)
         src_id = swap["src"]["id"]
         dest_id = swap["dest"]["id"]
         src_coin = swap["src"]["coin"]
         dest_coin = swap["dest"]["coin"]
         src_amount = swap["src"]["amount"]
         dest_amount = swap["dest"]["amount"]
-        utc_date = swap["utc_date"]
-        wallet = swap["wallet"]
+        # utc_date = swap["utc_date"]
+        # wallet = swap["wallet"]
 
-        track_investment = self.track[src_coin]["investment"] * (
-            (src_amount * -1) / self.track[src_coin]["amount"]
-        )
-        gain_loss = investment - track_investment
-        if gain_loss > 0:
-            action_type = "GAIN"
-        elif gain_loss < 0:
-            action_type = "LOSS"
-        if action_type:
-            self.add_gain_loss(
-                {
-                    "id": str(uuid.uuid4()),
-                    "utc_date": utc_date,
-                    "action_type": action_type,
-                    "coin": dest_coin,
-                    "amount": 0.00,
-                    "investment": gain_loss,
-                    "wallet": wallet,
-                }
-            )
-        investment -= gain_loss  # IMPORTANT!
-        self.update_row_investment(src_id, investment * -1, src_coin)
-        self.update_row_investment(dest_id, investment, dest_coin)
-
+        track_investment = self.track[src_coin]["investment"] * ((src_amount * -1) / self.track[src_coin]["amount"])
+        # gain_loss = investment - track_investment
+        # action_type = ""
+        # if gain_loss > 0:
+        #     action_type = "GAIN"
+        # elif gain_loss < 0:
+        #     action_type = "LOSS"
+        # if action_type:
+        #     self.add_gain_loss(
+        #         {
+        #             "id": str(uuid.uuid4()),
+        #             "utc_date": utc_date,
+        #             "action_type": action_type,
+        #             "coin": dest_coin,
+        #             "amount": 0.00,
+        #             "investment": gain_loss,
+        #             "wallet": wallet,
+        #         }
+        #     )
+        # investment -= gain_loss  # IMPORTANT!
+        self.update_row_investment(src_id, track_investment * -1, src_coin)
+        self.update_row_investment(dest_id, track_investment, dest_coin)
         self.track[src_coin]["amount"] += src_amount
         self.track[dest_coin]["amount"] += dest_amount
+        if self.track[src_coin]["investment"] < 0:
+            raise Exception(f"{src_coin} {self.track[src_coin]}")
 
     def process(self, action_list: list[dict]) -> None:
         swap: dict = {}
@@ -307,10 +306,10 @@ class Collect:
                     "investment": 0.0,
                 }
 
-            if action["action_type"] in ["DEPOSIT", "WITHDRAW"]:
+            if action["action_type"] in ["DEPOSIT", "WITHDRAW", "ADJUSTMENT"]:
                 self.track[coin]["investment"] += action["investment"]
                 self.track[coin]["amount"] += amount
-            elif action["action_type"] in ["FEE", "INTEREST", "ADJUSTMENT", "MINING", "TRANSFER"]:
+            elif action["action_type"] in ["FEE", "INTEREST", "MINING", "TRANSFER"]:
                 self.track[coin]["amount"] += amount
             elif action["action_type"] == "SWAP":
                 # we process SWAP here
@@ -341,37 +340,82 @@ class Collect:
         raw_investment = self.query(sql_str, {})
         return raw_investment[0][0]
 
-    def get_portfolio(self) -> list[dict]:
+    def get_portfolio(self) -> None:
         sql_str = """
-            SELECT coin, amount
+            SELECT *
             FROM portfolio;
         """
         raw_portfolio = self.query(sql_str, {})
-        portfolio = []
         all_values = 0.0
         actual_investment = self.get_actual_investment()
+        table = PrettyTable()
+        table.field_names = [
+            "time",
+            "investment",
+            "coin",
+            "amount",
+            "current_price",
+            "current_value",
+            "min_price",
+            "difference",
+        ]
         with requests.Session() as sess:
             for item in raw_portfolio:
                 raw_response = sess.get(f"{self.binance_url}/api/v3/avgPrice?symbol={item[0]}BUSD")
                 raw_response.raise_for_status()
                 json_response = raw_response.json()
-                price = round(float(json_response["price"]), 3)
+                current_price = round(float(json_response["price"]) * self.FIAT_EXCHANGE_RATE, 2)
                 now = datetime.now()
-                value = round((price * item[1]) * self.FIAT_EXCHANGE_RATE, 3)
-                all_values += value
-                row = {
-                    "coin": item[0],
-                    "amount": item[1],
-                    "price": price,
-                    "time": now.strftime("%H:%M:%S %d/%b/%Y"),
-                    "current_value": value,
-                }
-                portfolio.append(row)
-        portfolio.append(
-            {
-                "current_value_total": round(all_values, 3),
-                "investment": actual_investment,
-                "difference": round(all_values - actual_investment, 3),
-            }
+                current_value = round(current_price * item[1], 2)
+                all_values += current_value
+                table.add_row(
+                    [
+                        now.strftime("%H:%M:%S %d/%b/%Y"),
+                        item[2],  # investment
+                        item[0],  # coin
+                        item[1],  # amount
+                        current_price,
+                        current_value,
+                        item[3],  # min_price
+                        round(current_value - item[2], 2),  # difference
+                    ]
+                )
+        #         row = {
+        #             "time": now.strftime("%H:%M:%S %d/%b/%Y"),
+        #             "coin": item[0],
+        #             "amount": item[1],
+        #             "investment": item[2],
+        #             "current_value": value,
+        #             "min_price": item[3],
+        #             "difference": value - item[2],
+        #         }
+        #         portfolio.append(row)
+        table.add_row(
+            [
+                "-",
+                actual_investment,
+                "-",
+                "-",
+                "-",
+                round(all_values, 3),
+                "-",
+                round(all_values - actual_investment, 3),
+            ]
         )
-        return portfolio
+        print(table)
+        # portfolio.append(
+        #     {
+        #         "current_value_total": round(all_values, 3),
+        #         "investment": actual_investment,
+        #         "difference": round(all_values - actual_investment, 3),
+        #     }
+        # )
+        # return portfolio
+
+    def reset_db(self, sql_script) -> None:
+        cursor = self.conn.cursor()
+        with open(sql_script, encoding="utf-8") as f:
+            sql_as_string = f.read()
+        cursor.executescript(sql_as_string)
+        self.conn.commit()
+        cursor.close()
