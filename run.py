@@ -1,22 +1,21 @@
 #!/usr/bin/env python
 
 import sys
-import json
 import logging
 from os import path
 
-from tools import Collect
+# from tools import Collect
+from tools import Report
 
 
 def main() -> None:
     logging.basicConfig(level=logging.DEBUG)
     logging.info(f"Script {path.basename(__file__)} has started")
-    c = Collect("./sqlite3.db")
-    c.reset_db("./data/db-definitions.sql")
-    c.save_history("./data/csv/history/")
-    c.proccess_raw_statement("./data/csv/best-binance.csv")
-    c.get_portfolio()
-    c.close_db()
+    r = Report()
+    r.load_raw_statement("./data/csv/best-binance.csv")
+    r.process()
+    r.get_portfolio()
+    r.close()
 
 
 if __name__ == "__main__":

@@ -4,14 +4,22 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+requests = "*"
+sqlalchemy = "*"
+prettytable = "*"
+psycopg2 = "*"
 
 [dev-packages]
 pylint = "*"
 mypy = "*"
+ptpython = "*"
+mypy-extensions = "*"
 black = "*"
+types-requests = "*"
+sqlalchemy = {extras = ["mypy"], version = "*"}
 
 [requires]
-python_version = "3.9"
+python_version = "3.10"
 
 [pipenv]
 allow_prereleases = true

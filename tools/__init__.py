@@ -1,2 +1,2 @@
 from .definitions import *
-from .collect import Collect
+from .report import Report

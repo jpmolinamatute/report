@@ -1,5 +1,3 @@
-PRAGMA foreign_keys = ON;
-PRAGMA optimize;
 DROP VIEW IF EXISTS portfolio;
 DROP VIEW IF EXISTS actual_investment;
 DROP TABLE IF EXISTS actions;
@@ -13,12 +11,13 @@ CREATE TABLE coins(
     name TEXT NOT NULL
 );
 CREATE TABLE actions(
-    id TEXT NOT NULL PRIMARY KEY,
-    utc_date TEXT NOT NULL,
+    id UUID NOT NULL PRIMARY KEY,
+    utc_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     action_type TEXT NOT NULL,
     coin TEXT NOT NULL,
-    amount REAL NOT NULL,
-    investment REAL NOT NULL DEFAULT 0.0,
+    action_id BYTEA NOT NULL,
+    amount NUMERIC(13, 8) NOT NULL,
+    investment NUMERIC(7, 2) NOT NULL DEFAULT 0.00,
     wallet TEXT NOT NULL,
     FOREIGN KEY(coin) REFERENCES coins(coin_token),
     FOREIGN KEY(wallet) REFERENCES wallets(name),
@@ -26,61 +25,51 @@ CREATE TABLE actions(
 );
 CREATE VIEW portfolio AS
 SELECT coin,
-    ROUND(SUM(amount), 8) AS amount,
-    ROUND(SUM(investment), 2) AS investment,
-    ROUND(SUM(investment) / SUM(amount), 2) AS min_price
+    SUM(amount) AS amount,
+    SUM(investment) AS investment,
+    SUM(investment) / SUM(amount) AS min_price
 FROM actions
 GROUP BY coin
-HAVING ROUND(SUM(amount), 8) > 0.00
+HAVING SUM(amount) > 0.00
 ORDER BY coin;
 CREATE VIEW actual_investment AS
-SELECT ROUND(SUM(investment), 2) AS investment
+SELECT SUM(investment)
 FROM actions
-WHERE action_type IN ("DEPOSIT", "WITHDRAW")
-ORDER BY utc_date;
+WHERE action_type IN ('DEPOSIT', 'WITHDRAW');
+-- ORDER BY utc_date;
 INSERT INTO action_type(name)
-VALUES ("ADJUSTMENT"),
-    -- this will be used when we don't know why we get a given balance
-    ("DEPOSIT"),
-    -- Thit cancel out withdraw, this affect investment
-    ("WITHDRAW"),
-    -- Thit cancel out deposit, this affect investment
-    ("FEE"),
-    -- this should affect assets amount
-    ("INTEREST"),
-    -- this should affect ONLY assets amount
-    ("MINING"),
-    -- this should affect ONLY assets amount
-    ("SWAP"),
-    -- this should affect assets amount
-    ("TRANSFER"),
-    -- this should affect wallet balance
-    ("LOSS"),
-    -- Thit cancel out gains, this affect investment
-    ("GAIN");
--- Thit cancel out losses, this affect investment
+VALUES ('ADJUSTMENT'),
+    ('DEPOSIT'),
+    ('WITHDRAW'),
+    ('FEE'),
+    ('INTEREST'),
+    ('MINING'),
+    ('SWAP'),
+    ('TRANSFER'),
+    ('LOSS'),
+    ('GAIN');
 INSERT INTO coins(coin_token, name)
-VALUES ("ADA", "Cardano"),
-    ("ATOM", "Cosmos"),
-    ("AXS", "Axie Infinity"),
-    ("BNB", "Binance Coin"),
-    ("BTC", "Bitcoin"),
-    ("BUSD", "Binance USD"),
-    ("DOGE", "Dogecoin"),
-    ("DOT", "Polkadot"),
-    ("ETH", "Ethereum"),
-    ("LTC", "Litecoin"),
-    ("LUNA", "Terra"),
-    ("SLP", "Smooth Love Potion"),
-    ("SOL", "Solana"),
-    ("UNI", "Uniswap"),
-    ("USDT", "Tether"),
-    ("XMR", "Monero"),
-    ("XRP", "XRP"),
-    ("NA", "NA");
+VALUES ('ADA', 'Cardano'),
+    ('ATOM', 'Cosmos'),
+    ('AXS', 'Axie Infinity'),
+    ('BNB', 'Binance Coin'),
+    ('BTC', 'Bitcoin'),
+    ('BUSD', 'Binance USD'),
+    ('DOGE', 'Dogecoin'),
+    ('DOT', 'Polkadot'),
+    ('ETH', 'Ethereum'),
+    ('LTC', 'Litecoin'),
+    ('LUNA', 'Terra'),
+    ('SLP', 'Smooth Love Potion'),
+    ('SOL', 'Solana'),
+    ('UNI', 'Uniswap'),
+    ('USDT', 'Tether'),
+    ('XMR', 'Monero'),
+    ('XRP', 'XRP'),
+    ('NA', 'NA');
 INSERT INTO wallets(name)
-VALUES ("BINANCE"),
-    ("TREZOR"),
-    ("METAMASK"),
-    ("YOROI"),
-    ("PHANTOM");
+VALUES ('BINANCE'),
+    ('TREZOR'),
+    ('METAMASK'),
+    ('YOROI'),
+    ('PHANTOM');
