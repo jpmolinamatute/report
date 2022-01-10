@@ -1,5 +1,6 @@
 import logging
 import csv
+import json
 from datetime import datetime
 import base64
 
@@ -75,7 +76,7 @@ class Report:
             except ValueError as err:
                 raise ValueError("Incorrect data format, should be %Y-%m-%d %H:%M:%S") from err
             action_id = base64.b64encode(line["UTC_Time"].encode("utf-8"))
-            investment = cast_to_float(line["Investment"], 2) if "Investment" in line and line["Investment"] else 0.00
+            investment = line["Investment"]
             action_list.append(
                 Actions(
                     utc_date=row_date,
@@ -93,9 +94,8 @@ class Report:
 
     def get_swap_percentage(self, action: Actions) -> float:
         src_coin = action.coin
-        src_amount = cast_to_float(action.amount * -1, 8)
+        src_amount = action.amount * -1
 
-        self.logger.debug(f"{self.track[src_coin]['amount']} {src_amount}")
         if self.track[src_coin]["amount"] < src_amount:
             percentage = 1.0
         elif self.track[src_coin]["amount"] > 0.0:
@@ -114,18 +114,17 @@ class Report:
     def update_investment(self, swap: Swap) -> None:
         src_coin = swap["src"].coin
         dest_coin = swap["dest"].coin
-        src_amount = swap["src"].amount
+        src_amount = round(swap["src"].amount, 8)
+        tracked_src_amount = round(self.track[src_coin]["amount"], 8)
         dest_amount = swap["dest"].amount
 
-        if (self.track[src_coin]["amount"] + src_amount) >= 0:
-            self.track[src_coin]["amount"] += src_amount
-            swap_percentage = self.get_swap_percentage(swap["src"])
-        else:
-            self.track[src_coin]["amount"] = 0
-            swap_percentage = 1.0
+        if (tracked_src_amount + src_amount) < 0:
+            self.logger.warning(f"WARNING: amount of {src_coin} exceed available")
 
+        self.track[src_coin]["amount"] = tracked_src_amount + src_amount
+        self.track[dest_coin]["amount"] = self.track[dest_coin]["amount"] + dest_amount
+        swap_percentage = self.get_swap_percentage(swap["src"])
         track_investment = cast_to_float(self.track[src_coin]["investment"] * swap_percentage, 2)
-        self.track[dest_coin]["amount"] += dest_amount
         self.track[src_coin]["investment"] -= track_investment
         self.track[dest_coin]["investment"] += track_investment
         swap["src"].investment = track_investment * -1
@@ -139,7 +138,7 @@ class Report:
             raw_response = sess.get(f"{self.binance_url}/api/v3/avgPrice?symbol={coin}BUSD")
             raw_response.raise_for_status()
             json_response = raw_response.json()
-            current_price = cast_to_float(float(json_response["price"]) * self.FIAT_EXCHANGE_RATE, 2)
+            current_price = float(json_response["price"]) * self.FIAT_EXCHANGE_RATE
         return current_price
 
     def process(self) -> None:
@@ -193,9 +192,9 @@ class Report:
         table = PrettyTable()
         table.field_names = [
             "time",
-            "investment",
             "coin",
             "amount",
+            "investment",
             "current_price",
             "current_value",
             "min_price",
@@ -205,32 +204,32 @@ class Report:
             for item in self.get_data_for_portfolio():
                 current_price = self.get_current_price(sess, item[0])
                 now = datetime.now()
-                current_value = cast_to_float(current_price * item[1], 2)
+                current_value = current_price * item[1]
                 all_values += current_value
-                investment = cast_to_float(item[2], 2)
-                current_investment = cast_to_float(current_investment + investment, 2)
+                investment = item[2]
+                current_investment = current_investment + investment
                 table.add_row(
                     [
                         now.strftime("%H:%M:%S %d/%b/%Y"),
-                        investment,  # investment
                         item[0],  # coin
-                        cast_to_float(item[1], 8),  # amount
-                        current_price,
-                        current_value,
-                        cast_to_float(item[3], 2) if len(item) == 4 else "-",  # min_price
-                        cast_to_float(current_value - item[2], 2),  # difference
+                        f"{item[1]:,.8f}",  # amount
+                        f"{investment:,.2f}",  # investment
+                        f"{current_price:,.2f}",
+                        f"{current_value:,.2f}",
+                        f"{item[3]:,.2f}" if len(item) == 4 else "-",  # min_price
+                        f"{current_value - investment:,.2f}",  # difference
                     ]
                 )
         table.add_row(
             [
                 "-",
-                actual_investment,
                 "-",
                 "-",
+                f"{actual_investment:,.2f}",
                 "-",
-                cast_to_float(all_values, 2),
+                f"{all_values:,.2f}",
                 "-",
-                cast_to_float(all_values - actual_investment, 2),
+                f"{all_values - actual_investment:,.2f}",
             ]
         )
         if current_investment != actual_investment:
