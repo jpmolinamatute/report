@@ -10,13 +10,19 @@ mapper_registry = registry()
 
 class Base(metaclass=DeclarativeMeta):
     __abstract__ = True
-
     # these are supplied by the sqlalchemy2-stubs, so may be omitted
     # when they are installed
     registry = mapper_registry
     metadata = mapper_registry.metadata
-
     __init__ = mapper_registry.constructor
+
+    def __repr__(self):
+        fmt = "{}.{}({})"
+        package = self.__class__.__module__
+        class_ = self.__class__.__name__
+        attrs = sorted((k, getattr(self, k)) for k in self.__mapper__.columns.keys())
+        sattrs = ", ".join("{}={!r}".format(*x) for x in attrs)
+        return fmt.format(package, class_, sattrs)
 
 
 class Action_Type(Base):

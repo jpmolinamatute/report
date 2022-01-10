@@ -54,6 +54,7 @@ def get_action_type(operation: str) -> ACTION_TYPE:
 
 class Report:
     FIAT_EXCHANGE_RATE = 1.28
+    STABLE_COINS = ["BUSD", "USDT"]
 
     def __init__(self) -> None:
         engine = create_engine(
@@ -74,6 +75,7 @@ class Report:
             except ValueError as err:
                 raise ValueError("Incorrect data format, should be %Y-%m-%d %H:%M:%S") from err
             action_id = base64.b64encode(line["UTC_Time"].encode("utf-8"))
+            investment = cast_to_float(line["Investment"], 2) if "Investment" in line and line["Investment"] else 0.00
             action_list.append(
                 Actions(
                     utc_date=row_date,
@@ -81,7 +83,7 @@ class Report:
                     coin=line["Coin"],
                     action_id=action_id,
                     amount=cast_to_float(line["Amount"], 8),
-                    investment=cast_to_float(line["Investment"], 2) if line["Investment"] else 0.00,
+                    investment=investment,
                     wallet=line["Wallet"],
                 )
             )
@@ -89,18 +91,40 @@ class Report:
         self.conn.add_all(action_list)
         self.conn.commit()
 
+    def get_swap_percentage(self, action: Actions) -> float:
+        src_coin = action.coin
+        src_amount = cast_to_float(action.amount * -1, 8)
+
+        self.logger.debug(f"{self.track[src_coin]['amount']} {src_amount}")
+        if self.track[src_coin]["amount"] < src_amount:
+            percentage = 1.0
+        elif self.track[src_coin]["amount"] > 0.0:
+            percentage = src_amount / self.track[src_coin]["amount"]
+        else:
+            percentage = 0.0
+
+        return percentage
+
+    def get_actual_investment(self) -> float:
+        query = self.conn.query(func.sum(Actions.investment))
+        query = query.filter(Actions.action_type.in_(["DEPOSIT", "WITHDRAW"]))
+        result = query.first()
+        return result[0]  # type: ignore[index]
+
     def update_investment(self, swap: Swap) -> None:
         src_coin = swap["src"].coin
         dest_coin = swap["dest"].coin
         src_amount = swap["src"].amount
         dest_amount = swap["dest"].amount
-        track_investment = self.track[src_coin]["investment"] * ((src_amount * -1) / self.track[src_coin]["amount"])
-        if track_investment < 0:
-            self.logger.debug(f"{track_investment=}")
-            self.logger.debug(f"{self.track[src_coin]['investment']=}")
-            self.logger.debug((src_amount * -1) / self.track[src_coin]["amount"])
-            self.logger.debug("=====================================================================")
-        self.track[src_coin]["amount"] += src_amount
+
+        if (self.track[src_coin]["amount"] + src_amount) >= 0:
+            self.track[src_coin]["amount"] += src_amount
+            swap_percentage = self.get_swap_percentage(swap["src"])
+        else:
+            self.track[src_coin]["amount"] = 0
+            swap_percentage = 1.0
+
+        track_investment = cast_to_float(self.track[src_coin]["investment"] * swap_percentage, 2)
         self.track[dest_coin]["amount"] += dest_amount
         self.track[src_coin]["investment"] -= track_investment
         self.track[dest_coin]["investment"] += track_investment
@@ -109,7 +133,7 @@ class Report:
         self.conn.commit()
 
     def get_current_price(self, sess: requests.Session, coin: str) -> float:
-        if coin == "BUSD":
+        if coin in self.STABLE_COINS:
             current_price = self.FIAT_EXCHANGE_RATE
         else:
             raw_response = sess.get(f"{self.binance_url}/api/v3/avgPrice?symbol={coin}BUSD")
@@ -139,7 +163,7 @@ class Report:
 
                 if data.action_id not in swap:
                     swap.clear()
-                    swap = {data.action_id: {}}
+                    swap = {data.action_id: {}}  # type: ignore[typeddict-item]
                 src_dest: SWAP_KEYS = "dest" if data.amount > 0.0 else "src"
                 swap[data.action_id][src_dest] = data
 
@@ -150,9 +174,22 @@ class Report:
             else:
                 raise Exception(f"Unknown action {data.action_type}")
 
+    def get_data_for_portfolio(self) -> list[tuple]:
+        query = self.conn.query(
+            Actions.coin,
+            func.sum(Actions.amount),
+            func.sum(Actions.investment),
+        )
+        query = query.add_columns(func.sum(Actions.investment) / func.sum(Actions.amount))
+        query = query.group_by(Actions.coin)
+        query = query.having(func.sum(Actions.amount) > 0)
+        query = query.order_by(Actions.coin)
+        return query.all()
+
     def get_portfolio(self) -> None:
         all_values = 0.0
-        actual_investment = 0.0
+        current_investment = 0.0
+        actual_investment = self.get_actual_investment()
         table = PrettyTable()
         table.field_names = [
             "time",
@@ -165,29 +202,22 @@ class Report:
             "difference",
         ]
         with requests.Session() as sess:
-            query = self.conn.query(
-                Actions.coin,
-                func.sum(Actions.amount),
-                func.sum(Actions.investment),
-            )
-            query = query.add_columns(func.sum(Actions.investment) / func.sum(Actions.amount))
-            query = query.group_by(Actions.coin)
-            query = query.having(func.sum(Actions.amount) > 0)
-
-            for item in query.all():
+            for item in self.get_data_for_portfolio():
                 current_price = self.get_current_price(sess, item[0])
                 now = datetime.now()
                 current_value = cast_to_float(current_price * item[1], 2)
                 all_values += current_value
+                investment = cast_to_float(item[2], 2)
+                current_investment = cast_to_float(current_investment + investment, 2)
                 table.add_row(
                     [
                         now.strftime("%H:%M:%S %d/%b/%Y"),
-                        cast_to_float(item[2], 2),  # investment
+                        investment,  # investment
                         item[0],  # coin
                         cast_to_float(item[1], 8),  # amount
                         current_price,
                         current_value,
-                        cast_to_float(item[3], 2),  # min_price
+                        cast_to_float(item[3], 2) if len(item) == 4 else "-",  # min_price
                         cast_to_float(current_value - item[2], 2),  # difference
                     ]
                 )
@@ -198,11 +228,15 @@ class Report:
                 "-",
                 "-",
                 "-",
-                round(all_values, 3),
+                cast_to_float(all_values, 2),
                 "-",
-                round(all_values - actual_investment, 3),
+                cast_to_float(all_values - actual_investment, 2),
             ]
         )
+        if current_investment != actual_investment:
+            msg = f"WARNING: {current_investment=} are different {actual_investment=} "
+            msg += f"{actual_investment - current_investment}"
+            self.logger.warning(msg)
         print(table)
 
     def close(self) -> None:

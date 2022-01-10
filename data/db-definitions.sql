@@ -66,6 +66,7 @@ VALUES ('ADA', 'Cardano'),
     ('USDT', 'Tether'),
     ('XMR', 'Monero'),
     ('XRP', 'XRP'),
+    ('SHIB', 'Shiba coin'),
     ('NA', 'NA');
 INSERT INTO wallets(name)
 VALUES ('BINANCE'),
