@@ -24,6 +24,6 @@ GROUP BY coin
 HAVING SUM(amount) > 0.00
 ORDER BY coin;
 CREATE VIEW actual_investment AS
-SELECT SUM(investment)
+SELECT SUM(investment) AS investment
 FROM actions
 WHERE action_type IN ('DEPOSIT', 'WITHDRAW');

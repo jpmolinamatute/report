@@ -1,6 +1,5 @@
 import logging
 import csv
-import json
 from datetime import datetime
 import base64
 
@@ -9,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 import requests
 from prettytable import PrettyTable
 
-from .db import Actions
+from .db import Actions, Portfolio, Actual_Investment
 from .definitions import ACTION_TYPE, SWAP_KEYS, Swap
 
 
@@ -54,7 +53,7 @@ def get_action_type(operation: str) -> ACTION_TYPE:
 
 
 class Report:
-    FIAT_EXCHANGE_RATE = 1.28
+    FIAT_EXCHANGE_RATE = 1.25
     STABLE_COINS = ["BUSD", "USDT"]
 
     def __init__(self) -> None:
@@ -106,10 +105,8 @@ class Report:
         return percentage
 
     def get_actual_investment(self) -> float:
-        query = self.conn.query(func.sum(Actions.investment))
-        query = query.filter(Actions.action_type.in_(["DEPOSIT", "WITHDRAW"]))
-        result = query.first()
-        return result[0]  # type: ignore[index]
+        result: Actual_Investment = self.conn.query(Actual_Investment).first()
+        return result.investment
 
     def update_investment(self, swap: Swap) -> None:
         src_coin = swap["src"].coin
@@ -173,18 +170,6 @@ class Report:
             else:
                 raise Exception(f"Unknown action {data.action_type}")
 
-    def get_data_for_portfolio(self) -> list[tuple]:
-        query = self.conn.query(
-            Actions.coin,
-            func.sum(Actions.amount),
-            func.sum(Actions.investment),
-        )
-        query = query.add_columns(func.sum(Actions.investment) / func.sum(Actions.amount))
-        query = query.group_by(Actions.coin)
-        query = query.having(func.sum(Actions.amount) > 0)
-        query = query.order_by(Actions.coin)
-        return query.all()
-
     def get_portfolio(self) -> None:
         all_values = 0.0
         current_investment = 0.0
@@ -201,22 +186,23 @@ class Report:
             "difference",
         ]
         with requests.Session() as sess:
-            for item in self.get_data_for_portfolio():
-                current_price = self.get_current_price(sess, item[0])
+            for item in self.conn.query(Portfolio).all():
+                self.logger.debug(item)
+                current_price = self.get_current_price(sess, item.coin)
                 now = datetime.now()
-                current_value = current_price * item[1]
+                current_value = current_price * item.amount
                 all_values += current_value
-                investment = item[2]
+                investment = item.investment
                 current_investment = current_investment + investment
                 table.add_row(
                     [
                         now.strftime("%H:%M:%S %d/%b/%Y"),
-                        item[0],  # coin
-                        f"{item[1]:,.8f}",  # amount
+                        item.coin,  # coin
+                        f"{item.amount:,.8f}",  # amount
                         f"{investment:,.2f}",  # investment
                         f"{current_price:,.2f}",
                         f"{current_value:,.2f}",
-                        f"{item[3]:,.2f}" if len(item) == 4 else "-",  # min_price
+                        f"{item.min_price:,.2f}",  # min_price  if len(item) == 4 else "-"
                         f"{current_value - investment:,.2f}",  # difference
                     ]
                 )

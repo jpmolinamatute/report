@@ -57,3 +57,16 @@ class Actions(Base):
     wallet_rel: Mapped[str] = relationship("Wallets", back_populates="actions_rel")
     coin_rel: Mapped[str] = relationship("Coins", back_populates="actions_rel")
     action_type_rel: Mapped[str] = relationship("Action_Type", back_populates="actions_rel")
+
+
+class Portfolio(Base):
+    __tablename__ = "portfolio"
+    coin = Column(String, primary_key=True)
+    amount = Column(Float(precision=13), nullable=False)
+    investment = Column(Float(precision=7), nullable=False)
+    min_price = Column(Float(precision=7), nullable=False)
+
+
+class Actual_Investment(Base):
+    __tablename__ = "actual_investment"
+    investment = Column(Float(precision=7), primary_key=True)
