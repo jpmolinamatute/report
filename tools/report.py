@@ -3,7 +3,7 @@ import csv
 from datetime import datetime
 import base64
 
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import requests
 from prettytable import PrettyTable
@@ -187,7 +187,6 @@ class Report:
         ]
         with requests.Session() as sess:
             for item in self.conn.query(Portfolio).all():
-                self.logger.debug(item)
                 current_price = self.get_current_price(sess, item.coin)
                 now = datetime.now()
                 current_value = current_price * item.amount
@@ -202,7 +201,7 @@ class Report:
                         f"{investment:,.2f}",  # investment
                         f"{current_price:,.2f}",
                         f"{current_value:,.2f}",
-                        f"{item.min_price:,.2f}",  # min_price  if len(item) == 4 else "-"
+                        f"{item.min_price:,.2f}",  # min_price
                         f"{current_value - investment:,.2f}",  # difference
                     ]
                 )
