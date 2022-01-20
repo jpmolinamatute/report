@@ -3,22 +3,33 @@
 import sys
 import logging
 from os import path
+import argparse
 
 from tools import Report
+
+
+def validate_path(statement: str) -> str:
+    file_path = ""
+    if path.exists(statement) and path.splitext(statement)[1] == ".csv":
+        file_path = path.abspath(statement)
+    else:
+        raise argparse.ArgumentTypeError("Invalid file")
+
+    return file_path
 
 
 def main() -> None:
     logging.basicConfig(level=logging.DEBUG)
     logging.info(f"Script {path.basename(__file__)} has started")
-    # c = Collect("./sqlite3.db")
-    # c.reset_db("./data/db-definitions.sql")
-    # # c.save_history("./data/csv/history/")
-    # c.proccess_raw_statement("./data/csv/best-binance.csv")
-    # c.get_portfolio()
-    # c.close_db()
+
+    parser = argparse.ArgumentParser(description="Generate crypto asset table.")
+    parser.add_argument("--statement", required=False, type=validate_path, help="Path to CSV statement file")
+    args = vars(parser.parse_args())
+
     r = Report()
-    r.load_raw_statement("./data/csv/best-binance.csv")
-    r.process()
+    if args["statement"]:
+        r.load_raw_statement(args["statement"])
+        r.process()
     r.get_portfolio()
     r.close()
 

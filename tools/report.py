@@ -1,10 +1,11 @@
 import logging
 import csv
 from datetime import datetime
-import base64
+import uuid
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError
 import requests
 from prettytable import PrettyTable
 
@@ -67,29 +68,30 @@ class Report:
         self.binance_url = "https://api.binance.com"
 
     def load_raw_statement(self, file_list: str) -> None:
-        action_list: list[Actions] = []
         csv_reader = process_raw_data(file_list)
         for line in csv_reader:
             try:
                 row_date = datetime.strptime(line["UTC_Time"], "%Y-%m-%d %H:%M:%S")
             except ValueError as err:
                 raise ValueError("Incorrect data format, should be %Y-%m-%d %H:%M:%S") from err
-            action_id = base64.b64encode(line["UTC_Time"].encode("utf-8"))
-            investment = line["Investment"]
-            action_list.append(
-                Actions(
-                    utc_date=row_date,
-                    action_type=get_action_type(line["Operation"]),
-                    coin=line["Coin"],
-                    action_id=action_id,
-                    amount=cast_to_float(line["Amount"], 8),
-                    investment=investment,
-                    wallet=line["Wallet"],
+            row_id = uuid.uuid5(uuid.NAMESPACE_DNS, line["UTC_Time"] + line["Coin"] + line["Amount"])
+            try:
+                self.conn.add(
+                    Actions(
+                        id=row_id,
+                        utc_date=row_date,
+                        action_type=get_action_type(line["Operation"]),
+                        coin=line["Coin"],
+                        action_id=uuid.uuid5(uuid.NAMESPACE_DNS, line["UTC_Time"]),
+                        amount=cast_to_float(line["Amount"], 8),
+                        investment=cast_to_float(line["Investment"], 2),
+                        wallet=line["Wallet"],
+                    )
                 )
-            )
-
-        self.conn.add_all(action_list)
-        self.conn.commit()
+                self.conn.commit()
+            except IntegrityError:
+                self.conn.rollback()
+                self.logger.warning(f"Row '{row_id}' was reverted")
 
     def get_swap_percentage(self, action: Actions) -> float:
         src_coin = action.coin
@@ -105,7 +107,7 @@ class Report:
         return percentage
 
     def get_actual_investment(self) -> float:
-        result: Actual_Investment = self.conn.query(Actual_Investment).first()
+        result = self.conn.query(Actual_Investment).first()
         return result.investment
 
     def update_investment(self, swap: Swap) -> None:

@@ -6,7 +6,7 @@ CREATE TABLE actions(
     utc_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     action_type TEXT NOT NULL,
     coin TEXT NOT NULL,
-    action_id BYTEA NOT NULL,
+    action_id UUID NOT NULL,
     amount NUMERIC(13, 8) NOT NULL,
     investment NUMERIC(7, 2) NOT NULL DEFAULT 0.00,
     wallet TEXT NOT NULL,

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, Float, ForeignKey, LargeBinary
+from sqlalchemy import Column, String, DateTime, Float, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, registry
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 from sqlalchemy.dialects.postgresql import UUID
@@ -17,11 +17,13 @@ class Base(metaclass=DeclarativeMeta):
     __init__ = mapper_registry.constructor
 
     def __repr__(self):
-        fmt = "{}({})"
         class_ = self.__class__.__name__
-        attrs = sorted((k, getattr(self, k)) for k in self.__mapper__.columns.keys())  # type: ignore[no-member]
+        # @INFO: self doesn't have __mapper__ member BUT all base's children do!
+        # pylint: disable=no-member
+        attrs = sorted((k, getattr(self, k)) for k in self.__mapper__.columns.keys())
+        # pylint: enable=no-member
         sattrs = ", ".join("{}={!r}".format(*x) for x in attrs)
-        return fmt.format(class_, sattrs)
+        return f"{class_}({ sattrs})"
 
 
 class Action_Type(Base):
@@ -45,14 +47,14 @@ class Coins(Base):
 
 class Actions(Base):
     __tablename__ = "actions"
-    id: Mapped[uuid.UUID] = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = Column(UUID(as_uuid=True), primary_key=True)
     utc_date = Column(DateTime(timezone=False))
-    action_type = Column(String, ForeignKey("action_type.name"))
-    coin = Column(String, ForeignKey("coins.coin_token"))
-    action_id = Column(LargeBinary, nullable=False)
-    amount = Column(Float(precision=13), nullable=False)
-    investment = Column(Float(precision=7), nullable=False)
-    wallet = Column(String, ForeignKey("wallets.name"))
+    action_type: str = Column(String, ForeignKey("action_type.name"))
+    coin: str = Column(String, ForeignKey("coins.coin_token"))
+    action_id: Mapped[uuid.UUID] = Column(UUID(as_uuid=True), nullable=False)
+    amount: float = Column(Float(precision=13), nullable=False)
+    investment: float = Column(Float(precision=7), nullable=False)
+    wallet: str = Column(String, ForeignKey("wallets.name"))
     wallet_rel: Mapped[str] = relationship("Wallets", back_populates="actions_rel")
     coin_rel: Mapped[str] = relationship("Coins", back_populates="actions_rel")
     action_type_rel: Mapped[str] = relationship("Action_Type", back_populates="actions_rel")
@@ -60,12 +62,12 @@ class Actions(Base):
 
 class Portfolio(Base):
     __tablename__ = "portfolio"
-    coin = Column(String, primary_key=True)
-    amount = Column(Float(precision=13), nullable=False)
-    investment = Column(Float(precision=7), nullable=False)
-    min_price = Column(Float(precision=7), nullable=False)
+    coin: str = Column(String, primary_key=True)
+    amount: float = Column(Float(precision=13), nullable=False)
+    investment: float = Column(Float(precision=7), nullable=False)
+    min_price: float = Column(Float(precision=7), nullable=False)
 
 
 class Actual_Investment(Base):
     __tablename__ = "actual_investment"
-    investment = Column(Float(precision=7), primary_key=True)
+    investment: float = Column(Float(precision=7), primary_key=True)
